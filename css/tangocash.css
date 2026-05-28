@@ -1,0 +1,574 @@
+/* ==========================================================================
+   TangoCash — v0 visual scaffold
+   ==========================================================================
+   Dark-mode primary. Brand palette pulled from the TangoCash logo: hood
+   orange, body magenta, screen purple. Generous spacing, big numbers,
+   confident type. Cash-app energy without being a Cash App clone.
+   ========================================================================== */
+
+:root {
+  /* Base */
+  --tc_bg:           #0b0a10;       /* almost-black with a hint of violet */
+  --tc_bg_elev:     #16141d;       /* card surface */
+  --tc_bg_elev_2:   #1f1c29;       /* nested card surface */
+  --tc_border:      rgba(255,255,255,0.06);
+  --tc_text:        #f5f3fb;
+  --tc_text_dim:    #9b97a8;
+  --tc_text_subtle: #6b6779;
+
+  /* Brand — from the logo */
+  --tc_orange:      #ff6f3c;
+  --tc_pink:        #ff3d8b;
+  --tc_magenta:     #d63d97;
+  --tc_purple:      #7c3aed;
+  --tc_violet:      #5b21b6;
+
+  /* Semantic */
+  --tc_pos:         #22d39a;  /* received money — green */
+  --tc_neg:         var(--tc_text);  /* sent money — neutral, not red (you sent it on purpose) */
+
+  /* Gradients */
+  --tc_grad_brand:  linear-gradient(135deg, var(--tc_orange) 0%, var(--tc_pink) 50%, var(--tc_purple) 100%);
+  --tc_grad_card:   linear-gradient(180deg, rgba(255,111,60,0.10) 0%, rgba(124,58,237,0.05) 100%);
+
+  /* Type */
+  --tc_font: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --tc_font_mono: ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Spacing rhythm */
+  --tc_pad_page: clamp(20px, 4vw, 56px);
+}
+
+/* ---- Reset ---- */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+img { display: block; max-width: 100%; }
+a { color: inherit; text-decoration: none; }
+button { font: inherit; cursor: pointer; }
+
+body {
+  font-family: var(--tc_font);
+  background: var(--tc_bg);
+  color: var(--tc_text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.45;
+}
+
+/* ==========================================================================
+   Header / nav
+   ========================================================================== */
+.tc_header {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 18px var(--tc_pad_page);
+  border-bottom: 1px solid var(--tc_border);
+  position: sticky;
+  top: 0;
+  background: rgba(11, 10, 16, 0.78);
+  backdrop-filter: saturate(160%) blur(16px);
+  -webkit-backdrop-filter: saturate(160%) blur(16px);
+  z-index: 50;
+}
+.tc_brand { display: flex; align-items: center; gap: 10px; }
+.tc_brand_logo { width: 32px; height: 32px; border-radius: 8px; }
+.tc_brand_name {
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
+.tc_nav { display: flex; gap: 4px; margin-left: auto; }
+.tc_nav_item {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--tc_text_dim);
+  transition: color 120ms ease, background 120ms ease;
+}
+.tc_nav_item:hover { color: var(--tc_text); background: rgba(255,255,255,0.04); }
+.tc_nav_item.is_active { color: var(--tc_text); background: rgba(255,255,255,0.06); }
+
+.tc_signout {
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--tc_text_dim);
+  transition: color 120ms ease;
+}
+.tc_signout:hover { color: var(--tc_text); }
+
+/* When signed out, the header is just brand — no nav. Pull brand left
+   and let the rest breathe. */
+.is_signed_out .tc_header { justify-content: flex-start; }
+
+/* ==========================================================================
+   Main / page frame
+   ========================================================================== */
+.tc_main {
+  flex: 1;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: clamp(24px, 4vw, 48px) var(--tc_pad_page);
+}
+
+/* ==========================================================================
+   Buttons
+   ========================================================================== */
+.tc_btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 22px;
+  border-radius: 12px;
+  border: none;
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease, color 120ms ease, opacity 120ms ease;
+  text-align: center;
+  white-space: nowrap;
+}
+.tc_btn:hover { transform: translateY(-1px); }
+.tc_btn:active { transform: translateY(0); }
+
+.tc_btn_primary {
+  background: var(--tc_grad_brand);
+  color: #fff;
+  box-shadow: 0 6px 20px -8px rgba(255,61,139,0.6);
+}
+.tc_btn_primary:hover {
+  box-shadow: 0 10px 28px -8px rgba(255,61,139,0.7);
+}
+
+.tc_btn_secondary {
+  background: rgba(255,255,255,0.08);
+  color: var(--tc_text);
+}
+.tc_btn_secondary:hover { background: rgba(255,255,255,0.12); }
+
+.tc_btn_xl {
+  padding: 18px 32px;
+  font-size: 17px;
+  border-radius: 14px;
+}
+.tc_btn_full { width: 100%; }
+
+.tc_btn_icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+}
+
+/* ==========================================================================
+   Hero (signed-out landing)
+   ========================================================================== */
+.tc_hero {
+  padding: clamp(40px, 10vh, 100px) 0 60px;
+  text-align: center;
+}
+.tc_hero_inner {
+  max-width: 720px;
+  margin: 0 auto;
+}
+.tc_hero_logo {
+  width: 88px;
+  height: 88px;
+  border-radius: 22px;
+  margin: 0 auto 28px;
+  box-shadow: 0 16px 60px -16px rgba(255,61,139,0.5);
+}
+.tc_hero_h {
+  font-size: clamp(40px, 7vw, 64px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  margin: 0 0 18px;
+  background: var(--tc_grad_brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.tc_hero_sub {
+  font-size: clamp(16px, 1.6vw, 19px);
+  color: var(--tc_text_dim);
+  margin: 0 0 36px;
+  line-height: 1.55;
+}
+.tc_hero_legal {
+  margin-top: 18px;
+  font-size: 12px;
+  color: var(--tc_text_subtle);
+}
+.tc_hero_legal a {
+  color: var(--tc_text_dim);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.tc_hero_legal a:hover { color: var(--tc_text); }
+
+/* ==========================================================================
+   Pitch row (under the hero)
+   ========================================================================== */
+.tc_pitch {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+.tc_pitch_card {
+  background: var(--tc_bg_elev);
+  border: 1px solid var(--tc_border);
+  border-radius: 16px;
+  padding: 28px 26px;
+}
+.tc_pitch_kicker {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--tc_orange);
+  margin-bottom: 14px;
+}
+.tc_pitch_h {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 10px;
+}
+.tc_pitch_card p {
+  margin: 0;
+  color: var(--tc_text_dim);
+  font-size: 14.5px;
+  line-height: 1.6;
+}
+.tc_pitch_card a { color: var(--tc_pink); text-decoration: underline; text-underline-offset: 2px; }
+.tc_pitch_card a:hover { color: var(--tc_text); }
+
+/* ==========================================================================
+   Wallet — balance card + activity feed
+   ========================================================================== */
+.tc_wallet { display: grid; gap: 32px; }
+
+.tc_balance_card {
+  background: var(--tc_bg_elev);
+  background-image: var(--tc_grad_card);
+  border: 1px solid var(--tc_border);
+  border-radius: 24px;
+  padding: 40px clamp(24px, 4vw, 40px);
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+.tc_balance_card::before {
+  content: '';
+  position: absolute;
+  top: -100px; right: -100px;
+  width: 280px; height: 280px;
+  background: var(--tc_grad_brand);
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.15;
+  pointer-events: none;
+}
+.tc_balance_label {
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--tc_text_dim);
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.tc_balance_amount {
+  font-size: clamp(48px, 10vw, 96px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  margin-bottom: 32px;
+}
+.tc_balance_actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+.tc_balance_actions .tc_btn { min-width: 140px; }
+
+.tc_section_h {
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tc_text_dim);
+  font-weight: 700;
+  margin: 0 0 16px;
+}
+
+.tc_activity_list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--tc_bg_elev);
+  border: 1px solid var(--tc_border);
+  border-radius: 16px;
+  overflow: hidden;
+}
+.tc_activity_row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--tc_border);
+}
+.tc_activity_row:last-child { border-bottom: none; }
+
+.tc_activity_avatar {
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  background: var(--tc_grad_brand);
+  color: #fff;
+  font-weight: 700;
+  font-size: 16px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  letter-spacing: 0;
+}
+.tc_activity_body { flex: 1; min-width: 0; }
+.tc_activity_main { font-size: 15px; }
+.tc_activity_handle { color: var(--tc_text); font-weight: 600; }
+.tc_activity_note {
+  font-size: 13px;
+  color: var(--tc_text_dim);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tc_activity_meta { text-align: right; flex-shrink: 0; }
+.tc_activity_amount { font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
+.tc_amount_received { color: var(--tc_pos); }
+.tc_amount_sent     { color: var(--tc_text); }
+.tc_activity_when { font-size: 12px; color: var(--tc_text_subtle); margin-top: 2px; }
+
+/* ==========================================================================
+   Forms (send / request)
+   ========================================================================== */
+.tc_form_section {
+  max-width: 540px;
+  margin: 0 auto;
+}
+.tc_form_h {
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0 0 28px;
+}
+.tc_form { display: grid; gap: 22px; }
+
+.tc_field { display: grid; gap: 8px; }
+.tc_field_label {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--tc_text_dim);
+  font-weight: 700;
+}
+.tc_field_optional {
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--tc_text_subtle);
+}
+
+.tc_input {
+  background: var(--tc_bg_elev);
+  border: 1px solid var(--tc_border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  color: var(--tc_text);
+  font: inherit;
+  font-size: 16px;
+  outline: none;
+  transition: border-color 120ms ease, background 120ms ease;
+  width: 100%;
+}
+.tc_input::placeholder { color: var(--tc_text_subtle); }
+.tc_input:focus { border-color: var(--tc_pink); background: var(--tc_bg_elev_2); }
+
+/* Amount field — visually larger, currency symbol attached. */
+.tc_field_amount .tc_field_label { margin-bottom: 4px; }
+.tc_amount_wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 18px 20px;
+  background: var(--tc_bg_elev);
+  border: 1px solid var(--tc_border);
+  border-radius: 14px;
+}
+.tc_amount_wrap:focus-within { border-color: var(--tc_pink); background: var(--tc_bg_elev_2); }
+.tc_amount_currency {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--tc_text_dim);
+}
+.tc_amount_input {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 44px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  flex: 1;
+  min-width: 0;
+}
+.tc_amount_input:focus { background: transparent; border: none; }
+
+/* Recent recipient chips. */
+.tc_recents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: -8px; /* tuck under the input */
+}
+.tc_recent_chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--tc_bg_elev);
+  border: 1px solid var(--tc_border);
+  color: var(--tc_text);
+  padding: 8px 14px 8px 8px;
+  border-radius: 999px;
+  font-size: 14px;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.tc_recent_chip:hover {
+  background: var(--tc_bg_elev_2);
+  border-color: rgba(255,255,255,0.12);
+}
+.tc_recent_avatar {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  background: var(--tc_grad_brand);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+
+.tc_form_legal {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--tc_text_subtle);
+  line-height: 1.6;
+  text-align: center;
+}
+
+/* ==========================================================================
+   Profile
+   ========================================================================== */
+.tc_profile { display: grid; gap: 32px; max-width: 720px; margin: 0 auto; }
+
+.tc_profile_card {
+  background: var(--tc_bg_elev);
+  background-image: var(--tc_grad_card);
+  border: 1px solid var(--tc_border);
+  border-radius: 24px;
+  padding: 40px 32px 32px;
+  text-align: center;
+}
+.tc_profile_avatar {
+  width: 96px; height: 96px;
+  border-radius: 50%;
+  margin: 0 auto 18px;
+  border: 3px solid rgba(255,255,255,0.08);
+  background: var(--tc_bg_elev_2);
+  object-fit: cover;
+}
+.tc_profile_name {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 4px;
+}
+.tc_profile_handle {
+  font-size: 16px;
+  color: var(--tc_pink);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.tc_profile_email { font-size: 14px; color: var(--tc_text_dim); }
+
+.tc_profile_meta {
+  background: var(--tc_bg_elev);
+  border: 1px solid var(--tc_border);
+  border-radius: 16px;
+  padding: 28px 24px;
+}
+.tc_profile_explainer {
+  margin: 0 0 22px;
+  color: var(--tc_text_dim);
+  font-size: 14.5px;
+  line-height: 1.65;
+}
+.tc_profile_explainer a { color: var(--tc_pink); text-decoration: underline; text-underline-offset: 2px; }
+
+.tc_kv { display: grid; gap: 1px; background: var(--tc_border); border-radius: 12px; overflow: hidden; }
+.tc_kv_row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--tc_bg_elev);
+  padding: 14px 18px;
+  font-size: 14px;
+}
+.tc_kv_k { color: var(--tc_text_dim); }
+.tc_kv_v { color: var(--tc_text); font-weight: 500; }
+
+/* ==========================================================================
+   Footer
+   ========================================================================== */
+.tc_footer {
+  border-top: 1px solid var(--tc_border);
+  padding: 24px var(--tc_pad_page);
+  margin-top: auto;
+}
+.tc_footer_inner {
+  max-width: 1100px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--tc_text_subtle);
+}
+.tc_footer_brand { display: flex; align-items: center; gap: 8px; color: var(--tc_text_dim); font-weight: 600; }
+.tc_footer_logo { width: 18px; height: 18px; border-radius: 4px; }
+.tc_footer_meta { flex: 1; min-width: 280px; }
+.tc_footer_meta a { color: var(--tc_text_dim); text-decoration: underline; text-underline-offset: 2px; }
+.tc_footer_meta a:hover { color: var(--tc_text); }
+.tc_footer_links { display: flex; gap: 18px; }
+.tc_footer_links a { color: var(--tc_text_dim); }
+.tc_footer_links a:hover { color: var(--tc_text); }
+
+/* ==========================================================================
+   Mobile
+   ========================================================================== */
+@media (max-width: 640px) {
+  .tc_header { gap: 12px; padding: 14px var(--tc_pad_page); }
+  .tc_nav { gap: 0; margin-left: 0; }
+  .tc_nav_item { padding: 8px 10px; font-size: 13px; }
+  .tc_brand_name { display: none; }
+  .tc_signout { display: none; }
+  .tc_balance_actions .tc_btn { min-width: 0; flex: 1; }
+  .tc_activity_note { max-width: 160px; }
+}
