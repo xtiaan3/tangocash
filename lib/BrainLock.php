@@ -98,6 +98,68 @@ final class BrainLock
     }
 
     /**
+     * Start an auth session and RETURN the URL data without emitting any
+     * output. Use this when you want to drive the popup from your own
+     * client-side JS (which is the only way to reliably avoid popup
+     * blockers — `window.open` must run during the click event).
+     *
+     * Returns: ['url' => '<brainlock.id/auth/SID>',
+     *           'session_id' => 'bl_sess_...',
+     *           'expires_at' => '2026-...']
+     *
+     * Use with the bundled `brainlock-connect.js` (or your own JS) like:
+     *
+     *     // Server side — return JSON to your sign-in button's fetch:
+     *     header('Content-Type: application/json');
+     *     echo json_encode(BrainLock::startSession(['user_id' => session_id()]));
+     *
+     *     // Client side — popup at click time, swap location after fetch.
+     *
+     * @throws RuntimeException on API error.
+     */
+    public static function startSession(array $opts = []): array
+    {
+        self::ensureConfigured();
+        if (empty($opts['user_id']) || !\is_string($opts['user_id'])) {
+            throw new \InvalidArgumentException('BrainLock::startSession requires user_id.');
+        }
+        $state = $opts['state'] ?? \bin2hex(\random_bytes(16));
+        $level = $opts['security_level'] ?? 'secure';
+        if (!\in_array($level, ['secure', 'elevated', 'maximum'], true)) {
+            throw new \InvalidArgumentException("BrainLock::startSession security_level must be 'secure', 'elevated', or 'maximum'.");
+        }
+
+        $resp = self::http(
+            'POST',
+            self::$config['api_base'] . '/v1/auth/session',
+            [
+                'user_id'        => $opts['user_id'],
+                'callback_url'   => self::$config['callback_url'],
+                'security_level' => $level,
+                'state'          => $state,
+                'require_geo'    => !empty($opts['require_geo']),
+            ],
+            ['Authorization: Bearer ' . self::$config['api_key']]
+        );
+        if (empty($resp['redirect_url']) || empty($resp['session_id'])) {
+            $msg = isset($resp['error']['message']) ? $resp['error']['message'] : 'unknown error';
+            throw new \RuntimeException('BrainLock: failed to create auth session: ' . $msg);
+        }
+        \setcookie(self::STATE_COOKIE, $state, [
+            'expires'  => \time() + 600,
+            'path'     => '/',
+            'secure'   => true,
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ]);
+        return [
+            'url'        => $resp['redirect_url'],
+            'session_id' => $resp['session_id'],
+            'expires_at' => $resp['expires_at'] ?? null,
+        ];
+    }
+
+    /**
      * Start a sign-in flow.
      *
      * Required:

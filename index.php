@@ -36,7 +36,13 @@ include __DIR__ . '/_header.php';
             No password to forget — sign in with BrainLock and you're in.
         </p>
 
-        <a class="styling_light btn_1" style="max-width:400px; display:inline-flex; align-items:center; justify-content:center;" href="/auth/start.php">
+        <!-- href is a NoJS fallback (server-emits the legacy popup-opener
+             page). The bl_signin_btn class wires the JS popup launcher
+             which opens the popup synchronously on click — avoids the
+             popup blocker. -->
+        <a class="styling_light btn_1 bl_signin_btn" data-brainlock-signin
+           style="max-width:400px; display:inline-flex; align-items:center; justify-content:center;"
+           href="/auth/start.php">
             <img src="/img/brainlock_logo_1024.png" alt="">
             Sign in with BrainLock
         </a>

@@ -15,6 +15,68 @@
 (function () {
   'use strict';
 
+  // ---------- BrainLock sign-in popup launcher ----------
+  // Any element with [data-brainlock-signin] or .bl_signin_btn opens the
+  // BrainLock auth popup on click. Window.open() runs synchronously inside
+  // the click handler so browsers don't block it; we then fetch the auth
+  // URL from /auth/start.json and redirect the already-open popup. The
+  // postMessage handler navigates the parent window to /auth/callback.php
+  // when BrainLock posts back its result.
+  var BL_ORIGIN = 'https://brainlock.id';
+  var SIGNIN_START_URL = '/auth/start.json.php';
+
+  function blOpenSignin(e) {
+    e.preventDefault();
+
+    // 1. Open popup IMMEDIATELY (still on the user's click — no blocker).
+    var w = 480, h = 720;
+    var winW = window.innerWidth  || document.documentElement.clientWidth  || screen.width;
+    var winH = window.innerHeight || document.documentElement.clientHeight || screen.height;
+    var left = (window.screenLeft || 0) + (winW - w) / 2;
+    var top  = (window.screenTop  || 0) + (winH - h) / 2;
+    var popup = window.open(
+      'about:blank',
+      'brainlock_signin',
+      'width=' + w + ',height=' + h + ',left=' + left + ',top=' + top + ',resizable=yes,scrollbars=yes'
+    );
+    if (!popup) {
+      alert('Looks like your browser blocked the sign-in popup. Please allow popups for this site and try again.');
+      return;
+    }
+
+    // 2. Listen for the auth result.
+    var onMessage = function (ev) {
+      if (ev.origin !== BL_ORIGIN) return;
+      var data = ev.data || {};
+      if (data.type !== 'brainlock:auth' || !data.url) return;
+      window.removeEventListener('message', onMessage);
+      window.location.href = data.url;
+    };
+    window.addEventListener('message', onMessage);
+
+    // 3. Fetch the auth URL and redirect the popup.
+    fetch(SIGNIN_START_URL, { method: 'POST', credentials: 'same-origin' })
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        if (!data.url) throw new Error('No URL in start_session response');
+        var sep = data.url.indexOf('?') === -1 ? '?' : '&';
+        popup.location.href = data.url + sep + 'embed=popup';
+      })
+      .catch(function (err) {
+        console.error('[bl_signin] failed to start session:', err);
+        try { popup.close(); } catch (e) {}
+        window.removeEventListener('message', onMessage);
+        alert('We couldn\'t start sign-in. Please try again.');
+      });
+  }
+
+  document.querySelectorAll('[data-brainlock-signin], .bl_signin_btn').forEach(function (el) {
+    el.addEventListener('click', blOpenSignin);
+  });
+
   // ---------- Drawer ----------
   var hamburgerBtn = document.getElementById('tc_hamburger_btn');
   var drawerClose  = document.getElementById('tc_drawer_close');
