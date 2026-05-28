@@ -16,14 +16,13 @@ $active_nav = $active_nav ?? '';
     <title><?= htmlspecialchars($page_title) ?></title>
     <meta name="description" content="TangoCash — a peer-to-peer wallet demo. The canonical reference for 'Sign in with BrainLock' integration.">
     <link rel="icon" type="image/png" href="/img/logo.png">
-    <link rel="stylesheet" href="/css/tangocash.css?v=1">
+    <link rel="stylesheet" href="/css/tangocash.css?v=1&r=<?=rand(1,100000)?>">
 </head>
 <body class="<?= $signed_in ? 'is_signed_in' : 'is_signed_out' ?>">
 
 <header class="tc_header">
     <a class="tc_brand" href="<?= $signed_in ? '/wallet.php' : '/' ?>">
-        <img src="/img/logo.png" alt="TangoCash" class="tc_brand_logo">
-        <span class="tc_brand_name">TangoCash</span>
+        <img src="/img/tangocash_menu_logo.png" alt="TangoCash" class="tc_brand_logo">
     </a>
 
     <?php if ($signed_in): ?>

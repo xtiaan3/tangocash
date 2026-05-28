@@ -11,22 +11,18 @@ include __DIR__ . '/_header.php';
 
 <section class="tc_hero">
     <div class="tc_hero_inner">
-        <img src="/img/logo.png" alt="" class="tc_hero_logo">
         <h1 class="tc_hero_h">Send. Receive. Done.</h1>
         <p class="tc_hero_sub">
             TangoCash is a peer-to-peer wallet for the people who actually pay each other back.
             No password to forget — sign in with BrainLock and you're in.
         </p>
 
-        <a href="/wallet.php" class="tc_btn tc_btn_primary tc_btn_xl">
-            <img src="/img/logo.png" class="tc_btn_icon" alt="">
+        <button class="styling_light btn_1" style="max-width:400px">
+            <img src="/img/brainlock_logo_1024.png" class="" alt="">
             Sign in with BrainLock
-        </a>
+        </button>
 
-        <p class="tc_hero_legal">
-            By signing in, you agree to TangoCash's
-            <a href="#">terms</a> and <a href="#">privacy policy</a>.
-        </p>
+        
     </div>
 </section>
 
