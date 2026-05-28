@@ -1,23 +1,101 @@
 /**
- * TangoCash — v0 scaffold JS.
+ * TangoCash — v1 site-wide JS
  *
- * Almost-empty for now. Will hold:
- *   - BrainLock popup launcher (Sign in with BrainLock click)
- *   - send / request form submission via fetch
- *   - any micro-interactions on chips / amount field
+ * Three concerns at this stage:
+ *   1. Drawer (right-side hamburger menu) open/close — backdrop click,
+ *      Escape, X button, hamburger toggle. .tc_drawer_open class on body
+ *      drives the animation.
+ *   2. Code copy buttons — copies the contents of the target <code>
+ *      element to clipboard and flashes the button.
+ *   3. Recent-recipient chips + amount input behaviors from v0 (kept).
  *
- * Kept inline-script-free for now so it's easy to follow.
+ * Eager initialization — body is already parsed by the time the script
+ * tag in _footer.php runs.
  */
 (function () {
   'use strict';
 
-  // Auto-fill recipient input when a "recent" chip is clicked.
+  // ---------- Drawer ----------
+  var hamburgerBtn = document.getElementById('tc_hamburger_btn');
+  var drawerClose  = document.getElementById('tc_drawer_close');
+  var backdrop     = document.getElementById('tc_drawer_backdrop');
+  var drawer       = document.getElementById('tc_drawer');
+
+  function openDrawer() {
+    document.body.classList.add('tc_drawer_open');
+    if (hamburgerBtn) hamburgerBtn.setAttribute('aria-expanded', 'true');
+    if (drawer) drawer.setAttribute('aria-hidden', 'false');
+    if (backdrop) backdrop.setAttribute('aria-hidden', 'false');
+  }
+  function closeDrawer() {
+    document.body.classList.remove('tc_drawer_open');
+    if (hamburgerBtn) hamburgerBtn.setAttribute('aria-expanded', 'false');
+    if (drawer) drawer.setAttribute('aria-hidden', 'true');
+    if (backdrop) backdrop.setAttribute('aria-hidden', 'true');
+  }
+
+  if (hamburgerBtn) {
+    hamburgerBtn.addEventListener('click', function () {
+      if (document.body.classList.contains('tc_drawer_open')) closeDrawer();
+      else openDrawer();
+    });
+  }
+  if (drawerClose) drawerClose.addEventListener('click', closeDrawer);
+  if (backdrop)    backdrop.addEventListener('click', closeDrawer);
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && document.body.classList.contains('tc_drawer_open')) closeDrawer();
+  });
+  // Drawer items navigate normally — but if they're #anchors on the same
+  // page, close the drawer first so the user actually sees the anchor.
+  document.querySelectorAll('.tc_drawer_item').forEach(function (a) {
+    a.addEventListener('click', function () {
+      // Always close — even external links benefit (drawer doesn't linger).
+      closeDrawer();
+    });
+  });
+
+  // ---------- Code copy buttons ----------
+  document.querySelectorAll('.tc_codeblock_copy').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var targetId = btn.getAttribute('data-copy-target');
+      if (!targetId) return;
+      var target = document.getElementById(targetId);
+      if (!target) return;
+      var text = target.textContent;
+      var fallback = function () {
+        try {
+          var ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed'; ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+          flash();
+        } catch (e) { console.warn('[tc] copy fallback failed', e); }
+      };
+      var flash = function () {
+        var orig = btn.textContent;
+        btn.textContent = 'Copied';
+        btn.classList.add('is_copied');
+        setTimeout(function () {
+          btn.textContent = orig;
+          btn.classList.remove('is_copied');
+        }, 1400);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(flash, fallback);
+      } else {
+        fallback();
+      }
+    });
+  });
+
+  // ---------- Recipient chips (auto-fill the recipient input) ----------
   document.querySelectorAll('.tc_recents').forEach(function (chipRow) {
     chipRow.addEventListener('click', function (e) {
       var chip = e.target.closest('.tc_recent_chip');
       if (!chip) return;
-      var handle = chip.textContent.trim().replace(/^@/, '').replace(/^[A-Z]\s+@?/, '');
-      // Pull the @handle from the chip's text, strip avatar initial.
       var match = chip.textContent.match(/@([\w_-]+)/);
       if (!match) return;
       var input = chipRow.previousElementSibling && chipRow.previousElementSibling.querySelector('input[name="recipient"]');
@@ -28,7 +106,7 @@
     });
   });
 
-  // Amount input — strip non-numeric, allow one decimal.
+  // ---------- Amount input — digits + one decimal ----------
   document.querySelectorAll('.tc_amount_input').forEach(function (input) {
     input.addEventListener('input', function () {
       var v = this.value.replace(/[^\d.]/g, '');
