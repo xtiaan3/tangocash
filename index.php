@@ -1,9 +1,24 @@
 <?php
 require __DIR__ . '/_demo_data.php';
 
-// In v0 there's no real auth — the "Sign in with BrainLock" button just
-// hops to /wallet.php which renders the signed-in view. Real flow:
-//   button click → BrainLock::connect() → popup → JWT → wallet.php
+// Real BrainLock sign-in is wired now. Button POSTs to /auth/start.php
+// → BrainLock::connect() opens the popup → /auth/callback.php verifies
+// the JWT → user lands on /wallet.php.
+//
+// If a session is already alive, send the user straight to the wallet
+// (the home page is the signed-out landing).
+if (\tc_current_user() !== null) {
+    \header('Location: /wallet.php');
+    exit;
+}
+
+// Sign-out handler — supported via /?signout=1 link in the drawer.
+if (isset($_GET['signout'])) {
+    \tc_sign_out();
+    \header('Location: /');
+    exit;
+}
+
 $page_title = 'TangoCash — sign in with BrainLock';
 $signed_in  = false;
 include __DIR__ . '/_header.php';
@@ -21,10 +36,10 @@ include __DIR__ . '/_header.php';
             No password to forget — sign in with BrainLock and you're in.
         </p>
 
-        <button class="styling_light btn_1" style="max-width:400px" onclick="window.location='/wallet.php'">
+        <a class="styling_light btn_1" style="max-width:400px; display:inline-flex; align-items:center; justify-content:center;" href="/auth/start.php">
             <img src="/img/brainlock_logo_1024.png" alt="">
             Sign in with BrainLock
-        </button>
+        </a>
 
         <div class="tc_hero_chips">
             <a href="#what"        class="tc_chip">What is this?</a>

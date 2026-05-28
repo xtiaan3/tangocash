@@ -1,5 +1,9 @@
 <?php
 require __DIR__ . '/_demo_data.php';
+if (\tc_current_user() === null) {
+    \header('Location: /');
+    exit;
+}
 $page_title = 'Request — TangoCash';
 $signed_in  = true;
 $active_nav = 'request';
