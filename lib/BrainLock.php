@@ -353,8 +353,19 @@ final class BrainLock
             'httponly' => true,
             'samesite' => 'Lax',
         ]);
+        // Build the proxy-prefixed URL for iframe transport. The partner
+        // mounts handleEmbed() at embed_path; the iframe loads via that
+        // same-origin path so cookies are first-party. The full URL
+        // (direct to brainlock.id) is kept for the redirect transport.
+        $authPath  = \parse_url($resp['redirect_url'], PHP_URL_PATH)  ?: '/';
+        $authQuery = \parse_url($resp['redirect_url'], PHP_URL_QUERY) ?: '';
+        $iframeUrl = self::$config['embed_path'] . $authPath . ($authQuery ? '?' . $authQuery : '');
+        $sep       = (\strpos($iframeUrl, '?') === false) ? '?' : '&';
+        $iframeUrl .= $sep . 'embed=iframe&proxy_base=' . \urlencode(self::$config['embed_path']);
+
         return [
-            'url'        => $resp['redirect_url'],
+            'url'        => $resp['redirect_url'], // direct to brainlock.id (redirect mode)
+            'iframe_url' => $iframeUrl,            // partner-origin proxy path (iframe mode)
             'session_id' => $resp['session_id'],
             'expires_at' => $resp['expires_at'] ?? null,
         ];

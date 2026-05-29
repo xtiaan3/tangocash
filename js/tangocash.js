@@ -15,16 +15,12 @@
 (function () {
   'use strict';
 
-  // ---------- BrainLock sign-in (in-page iframe) ----------
-  // EXPERIMENTAL: instead of a popup window we inject a full-viewport
-  // iframe + dim backdrop. BrainLock serves the embed=iframe page with
-  // a `CSP: frame-ancestors https://tangocash.etonica.com` header that
-  // lets us frame it. When the user finishes, the iframe postMessages
-  // back; we tear it down and navigate to /auth/callback.php with the
-  // token.
-  //
-  // Fallback to the old popup flow if anything blocks iframe init.
-  var BL_ORIGIN = 'https://brainlock.id';
+  // ---------- BrainLock sign-in (in-page iframe via same-origin proxy) ----------
+  // The iframe loads from our OWN origin under /_bl/ — the BrainLock
+  // SDK's handleEmbed() route proxies every request through to
+  // brainlock.id. Because the iframe is same-origin with this page,
+  // cookies behave as first-party. No CHIPS, no Storage Access, no
+  // popup. Works in every browser including Safari.
   var SIGNIN_START_URL = '/auth/start.json.php';
 
   function blOpenSignin(e) {
@@ -75,9 +71,12 @@
     };
     window.addEventListener('keydown', onKey);
 
-    // 2. Listen for the BrainLock postMessage handoff.
+    // 2. Listen for the BrainLock postMessage handoff. In proxy mode
+    //    the iframe lives on OUR origin, so the message comes from
+    //    window.location.origin — not brainlock.id.
+    var SAME_ORIGIN = window.location.origin;
     var onMessage = function (ev) {
-      if (ev.origin !== BL_ORIGIN) return;
+      if (ev.origin !== SAME_ORIGIN) return;
       var data = ev.data || {};
       if (data.type !== 'brainlock:auth' || !data.url) return;
       window.removeEventListener('message', onMessage);
@@ -87,16 +86,17 @@
     };
     window.addEventListener('message', onMessage);
 
-    // 3. Fetch the auth URL and point the iframe at it.
+    // 3. Fetch the auth URL and point the iframe at it. Server returns
+    //    iframe_url which is /_bl/auth/<sid>?embed=iframe&proxy_base=…
+    //    already, so we just assign it directly.
     fetch(SIGNIN_START_URL, { method: 'POST', credentials: 'same-origin' })
       .then(function (r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();
       })
       .then(function (data) {
-        if (!data.url) throw new Error('No URL in start_session response');
-        var sep = data.url.indexOf('?') === -1 ? '?' : '&';
-        iframe.src = data.url + sep + 'embed=iframe';
+        if (!data.iframe_url) throw new Error('No iframe_url in start_session response');
+        iframe.src = data.iframe_url;
       })
       .catch(function (err) {
         console.error('[bl_signin] failed to start session:', err);
