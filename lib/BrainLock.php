@@ -208,7 +208,7 @@ final class BrainLock
 
         $ch = \curl_init();
         \curl_setopt_array($ch, [
-            CURLOPT_URL            => self::insertProxyBaseQuery($upstreamURL, $prefix),
+            CURLOPT_URL            => $upstreamURL,
             CURLOPT_CUSTOMREQUEST  => $method,
             CURLOPT_HTTPHEADER     => $fwdHeaders,
             CURLOPT_FOLLOWLOCATION => false,
@@ -288,15 +288,6 @@ final class BrainLock
         ) ?? $html;
     }
 
-    /**
-     * Add ?proxy_base=<prefix> to the upstream URL so brainlock-go knows
-     * to emit absolute asset URLs + inject window.BL_API_BASE.
-     */
-    private static function insertProxyBaseQuery(string $url, string $prefix): string
-    {
-        $sep = (\strpos($url, '?') === false) ? '?' : '&';
-        return $url . $sep . 'proxy_base=' . \urlencode($prefix);
-    }
 
     /**
      * Start an auth session and RETURN the URL data without emitting any
