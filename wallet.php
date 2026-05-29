@@ -1,8 +1,6 @@
 <?php
 require __DIR__ . '/_demo_data.php';
-\error_log('[tc-wallet] session_id=' . \session_id() . ' bl_user_present=' . (isset($_SESSION['bl_user']) ? 'YES' : 'NO') . ' SESSION keys=' . \implode(',', \array_keys($_SESSION)));
 if (\tc_current_user() === null) {
-    \error_log('[tc-wallet] no user — redirecting to /');
     \header('Location: /');
     exit;
 }
