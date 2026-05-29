@@ -265,12 +265,28 @@ final class BrainLock
 
         // HTML responses get root-relative href/src/action attributes
         // prefixed with the proxy path so assets resolve through the
-        // proxy. Skipping inline strings ('/api/...' inside JS) — those
-        // are handled by the BrainLock-side fetch/XHR monkey-patch.
+        // proxy. CSS responses get url(/...) rewriting for the same
+        // reason (icons referenced via background-image). Inline JS
+        // strings ('/api/...' inside JS) are NOT rewritten here — they
+        // get the BrainLock-side fetch/XHR/script monkey-patch.
         if (\strpos($contentType, 'text/html') !== false) {
             $bodyRaw = self::rewriteHTMLPaths($bodyRaw, $prefix);
+        } elseif (\strpos($contentType, 'text/css') !== false) {
+            $bodyRaw = self::rewriteCSSPaths($bodyRaw, $prefix);
         }
         echo $bodyRaw;
+    }
+
+    /**
+     * Prefix root-relative URLs inside CSS `url(/...)` references.
+     */
+    private static function rewriteCSSPaths(string $css, string $prefix): string
+    {
+        return \preg_replace(
+            '#\burl\(\s*(["\']?)/(?!/|' . \preg_quote(\ltrim($prefix, '/'), '#') . '/)#i',
+            'url($1' . $prefix . '/',
+            $css
+        ) ?? $css;
     }
 
     /**
