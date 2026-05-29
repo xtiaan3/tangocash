@@ -28,7 +28,7 @@ require_once __DIR__ . '/lib/BrainLock.php';
     'api_key'      => \getenv('BRAINLOCK_API_KEY')      ?: ($_ENV['BRAINLOCK_API_KEY']      ?? ''),
     'callback_url' => \getenv('BRAINLOCK_CALLBACK_URL') ?: ($_ENV['BRAINLOCK_CALLBACK_URL'] ?? ''),
     'api_base'     => \getenv('BRAINLOCK_API_BASE')     ?: ($_ENV['BRAINLOCK_API_BASE']     ?? 'https://brainlock.id'),
-    'mode'         => 'popup',
+    'mode'         => 'iframe',
 ]);
 
 /**
