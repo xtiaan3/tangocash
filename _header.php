@@ -114,7 +114,8 @@ $js_v  = @filemtime(__DIR__ . '/js/tangocash.js')  ?: time();
 
         <?php if ($signed_in): ?>
             <div class="tc_drawer_section">
-                <a href="/?signout=1" class="tc_drawer_item tc_drawer_item_quiet">Sign out</a>
+                <a href="/?signout=1"    class="tc_drawer_item tc_drawer_item_quiet">Sign out</a>
+                <a href="/?signout=hard" class="tc_drawer_item tc_drawer_item_quiet">Sign out + clear (fresh start)</a>
             </div>
         <?php endif; ?>
 

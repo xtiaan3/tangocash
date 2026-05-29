@@ -1,21 +1,36 @@
 <?php
 require __DIR__ . '/_demo_data.php';
 
-// Real BrainLock sign-in is wired now. Button POSTs to /auth/start.php
-// → BrainLock::connect() opens the popup → /auth/callback.php verifies
-// the JWT → user lands on /wallet.php.
+// Sign-out handlers MUST run before the signed-in→/wallet redirect
+// below, otherwise the redirect fires first and the signout link
+// silently does nothing.
 //
+//   ?signout=1       — regular: clear PHP session, land on /
+//   ?signout=hard    — hard: also wipe every cookie this origin can
+//                     see (BrainLock state cookie, anything we set
+//                     in the future). Useful for testing.
+if (isset($_GET['signout'])) {
+    \tc_sign_out();
+    if ($_GET['signout'] === 'hard') {
+        // Expire every cookie visible at this path/host.
+        foreach (\array_keys($_COOKIE) as $name) {
+            \setcookie($name, '', [
+                'expires'  => 1,
+                'path'     => '/',
+                'secure'   => true,
+                'httponly' => false,
+                'samesite' => 'Lax',
+            ]);
+        }
+    }
+    \header('Location: /' . ($_GET['signout'] === 'hard' ? '?cleared=1' : ''));
+    exit;
+}
+
 // If a session is already alive, send the user straight to the wallet
 // (the home page is the signed-out landing).
 if (\tc_current_user() !== null) {
     \header('Location: /wallet.php');
-    exit;
-}
-
-// Sign-out handler — supported via /?signout=1 link in the drawer.
-if (isset($_GET['signout'])) {
-    \tc_sign_out();
-    \header('Location: /');
     exit;
 }
 
