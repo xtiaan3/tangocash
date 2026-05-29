@@ -89,11 +89,29 @@ final class BrainLock
             throw new \InvalidArgumentException('BrainLock: callback_url must be https:// (or http://localhost for development).');
         }
 
+        // Transport mode.
+        //   'iframe'   — default, render the BrainLock UI as a full-viewport
+        //                iframe over the partner page. The bundled client
+        //                JS does a capability check at click time and
+        //                silently falls back to 'redirect' if the browser
+        //                can't accept partitioned cookies (Safari ≤17,
+        //                ancient Chrome, etc.). Popup window mode has been
+        //                retired — it produced a dinky 480x720 chrome
+        //                window that looked nothing like the polished
+        //                BrainLock UI.
+        //   'redirect' — full-page navigation to brainlock.id and back.
+        //                Works everywhere. Use this explicitly if you
+        //                don't want the in-page iframe at all.
+        $mode = $config['mode'] ?? 'iframe';
+        if (!\in_array($mode, ['iframe', 'redirect'], true)) {
+            throw new \InvalidArgumentException('BrainLock: mode must be "iframe" or "redirect".');
+        }
+
         self::$config = [
             'api_key'      => $config['api_key'],
             'callback_url' => $config['callback_url'],
             'api_base'     => \rtrim($config['api_base'] ?? self::DEFAULT_API_BASE, '/'),
-            'mode'         => $config['mode'] ?? 'popup',
+            'mode'         => $mode,
         ];
     }
 
@@ -233,10 +251,13 @@ final class BrainLock
             exit;
         }
 
-        // Popup mode: emit an opener page. It launches the BrainLock dialog
-        // in ?embed=popup mode, listens for the postMessage handoff, and
-        // navigates to the callback URL (which verify() consumes).
-        self::emitPopupOpener($resp['redirect_url']);
+        // Iframe mode: emit a launcher page. The page does a client-side
+        // capability check (browsers that don't support partitioned
+        // cookies / CHIPS — chiefly Safari ≤ 17 — fall back to a
+        // full-page redirect instead of the iframe). Modern browsers
+        // get the in-page experience: TangoCash dims, BrainLock fills
+        // the viewport, postMessage handoff on completion.
+        self::emitIframeOpener($resp['redirect_url']);
     }
 
     /**
@@ -353,18 +374,27 @@ final class BrainLock
     }
 
     /**
-     * Emit the popup-opener page. Tiny inline HTML+JS — no external assets.
-     * Opens the BrainLock popup at ?embed=popup, listens for the auth
-     * postMessage, and navigates to your callback URL with the token.
+     * Emit the iframe-launcher page. Inline HTML+JS, no external assets.
+     *
+     * Capability check runs first. If the browser supports partitioned
+     * cookies (Safari 18.2+, Chrome 118+, Firefox 130+, Edge 118+), an
+     * iframe is injected over the page and the BrainLock UI takes over
+     * the viewport. If not (older Safari especially), the page falls
+     * back to a full-page redirect to brainlock.id — same final state,
+     * just less polish during the auth ceremony.
+     *
+     * Either way the partner's callback URL ends up with ?token=… on it
+     * and verify() takes over from there.
      */
-    private static function emitPopupOpener(string $authUrl): void
+    private static function emitIframeOpener(string $authUrl): void
     {
-        $popupUrl   = $authUrl . (\strpos($authUrl, '?') === false ? '?' : '&') . 'embed=popup';
-        $apiOrigin  = \parse_url(self::$config['api_base'], PHP_URL_SCHEME) . '://' . \parse_url(self::$config['api_base'], PHP_URL_HOST);
-        $popupUrlJs = \json_encode($popupUrl, JSON_UNESCAPED_SLASHES);
-        $apiOriginJs = \json_encode($apiOrigin, JSON_UNESCAPED_SLASHES);
+        $iframeUrl   = $authUrl . (\strpos($authUrl, '?') === false ? '?' : '&') . 'embed=iframe';
+        $redirectUrl = $authUrl;
+        $apiOrigin   = \parse_url(self::$config['api_base'], PHP_URL_SCHEME) . '://' . \parse_url(self::$config['api_base'], PHP_URL_HOST);
+        $iframeUrlJs   = \json_encode($iframeUrl,   JSON_UNESCAPED_SLASHES);
+        $redirectUrlJs = \json_encode($redirectUrl, JSON_UNESCAPED_SLASHES);
+        $apiOriginJs   = \json_encode($apiOrigin,   JSON_UNESCAPED_SLASHES);
 
-        // Tell intermediaries this page should never be cached.
         \header('Cache-Control: no-store, must-revalidate');
         \header('Content-Type: text/html; charset=utf-8');
 
@@ -382,55 +412,68 @@ final class BrainLock
         .bl_loader_spinner { width: 36px; height: 36px; border-radius: 50%; border: 3px solid rgba(255,255,255,0.15); border-top-color: #ff3d8b; animation: bl_spin 700ms linear infinite; margin: 0 auto 18px; }
         .bl_loader_h { font-size: 16px; font-weight: 600; margin: 0 0 6px; }
         .bl_loader_sub { font-size: 13px; opacity: 0.65; margin: 0; }
-        .bl_loader_link { display: inline-block; margin-top: 22px; font-size: 13px; color: #ff3d8b; text-decoration: underline; }
         @keyframes bl_spin { to { transform: rotate(360deg); } }
+        #bl_iframe { position: fixed; inset: 0; width: 100vw; height: 100vh; border: 0; z-index: 9999; background: transparent; opacity: 0; transition: opacity 220ms ease; }
     </style>
 </head>
 <body>
-<div class="bl_loader_wrap">
+<div class="bl_loader_wrap" id="bl_fallback_ui">
     <div class="bl_loader_inner">
         <div class="bl_loader_spinner"></div>
         <p class="bl_loader_h">Signing in with BrainLock…</p>
-        <p class="bl_loader_sub">A small window should have just opened. Finish the sign-in there.</p>
-        <a id="bl_popup_retry" class="bl_loader_link" href="#">Window didn't open? Click here.</a>
+        <p class="bl_loader_sub">Just a moment.</p>
     </div>
 </div>
 <script>
 (function () {
-    var POPUP_URL = $popupUrlJs;
-    var BL_ORIGIN = $apiOriginJs;
-    var popup = null;
+    var IFRAME_URL   = $iframeUrlJs;
+    var REDIRECT_URL = $redirectUrlJs;
+    var BL_ORIGIN    = $apiOriginJs;
 
-    function openPopup() {
-        // Centered, 480x720 — fits BrainLock's ?embed=popup chrome.
-        var w = 480, h = 720;
-        var dualLeft = window.screenLeft !== undefined ? window.screenLeft : screen.left || 0;
-        var dualTop  = window.screenTop  !== undefined ? window.screenTop  : screen.top  || 0;
-        var winW = window.innerWidth  || document.documentElement.clientWidth  || screen.width;
-        var winH = window.innerHeight || document.documentElement.clientHeight || screen.height;
-        var left = dualLeft + (winW - w) / 2;
-        var top  = dualTop  + (winH - h) / 2;
-        popup = window.open(POPUP_URL, 'brainlock_signin', 'width=' + w + ',height=' + h + ',left=' + left + ',top=' + top + ',resizable=yes,scrollbars=yes');
+    // Capability check: does this browser support partitioned cookies
+    // (CHIPS)? Without them Safari ≤17 silently drops BrainLock's
+    // session cookies inside the iframe and the user gets stuck on
+    // the signin screen. Sniff by user agent — overkill maybe, but
+    // version-gated and accurate.
+    function supportsPartitionedCookies() {
+        var ua = navigator.userAgent;
+        var isSafari = /Safari\//.test(ua) && !/Chrome|CriOS|FxiOS|EdgiOS|Edg\//.test(ua);
+        if (isSafari) {
+            var m = ua.match(/Version\/(\d+)\.(\d+)/);
+            if (!m) return false;
+            var major = parseInt(m[1], 10), minor = parseInt(m[2], 10);
+            return major > 18 || (major === 18 && minor >= 2);
+        }
+        var chrome = ua.match(/Chrome\/(\d+)/);
+        if (chrome) return parseInt(chrome[1], 10) >= 118;
+        var firefox = ua.match(/Firefox\/(\d+)/);
+        if (firefox) return parseInt(firefox[1], 10) >= 130;
+        return false; // unknown: be conservative, redirect
     }
+
+    if (!supportsPartitionedCookies()) {
+        // Older browser — give it the redirect experience. Same final
+        // result, no in-page iframe, but it works.
+        window.location.replace(REDIRECT_URL);
+        return;
+    }
+
+    // Modern browser — inject the iframe.
+    var iframe = document.createElement('iframe');
+    iframe.id = 'bl_iframe';
+    iframe.title = 'Sign in with BrainLock';
+    iframe.src = IFRAME_URL;
+    document.body.appendChild(iframe);
+    requestAnimationFrame(function () { iframe.style.opacity = '1'; });
 
     window.addEventListener('message', function (event) {
         if (event.origin !== BL_ORIGIN) return;
         var data = event.data || {};
-        if (data.type !== 'brainlock:auth') return;
-        if (!data.url) return;
-        // BrainLock has already redirected to (or built) the callback URL
-        // with ?token=… on it. Navigate the parent to that URL — your
-        // callback handler verifies the token and signs the user in.
+        if (data.type !== 'brainlock:auth' || !data.url) return;
+        // BrainLock has already built the callback URL with ?token=… on
+        // it. Navigate the parent there; verify() consumes the token.
         window.location.href = data.url;
     });
-
-    // Fallback for users where window.open is blocked.
-    document.getElementById('bl_popup_retry').addEventListener('click', function (e) {
-        e.preventDefault();
-        openPopup();
-    });
-
-    openPopup();
 })();
 </script>
 </body>
