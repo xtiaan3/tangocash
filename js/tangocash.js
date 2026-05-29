@@ -15,46 +15,111 @@
 (function () {
   'use strict';
 
-  // ---------- BrainLock sign-in popup launcher ----------
-  // Any element with [data-brainlock-signin] or .bl_signin_btn opens the
-  // BrainLock auth popup on click. Window.open() runs synchronously inside
-  // the click handler so browsers don't block it; we then fetch the auth
-  // URL from /auth/start.json and redirect the already-open popup. The
-  // postMessage handler navigates the parent window to /auth/callback.php
-  // when BrainLock posts back its result.
+  // ---------- BrainLock sign-in (in-page iframe) ----------
+  // EXPERIMENTAL: instead of a popup window we inject a full-viewport
+  // iframe + dim backdrop. BrainLock serves the embed=iframe page with
+  // a `CSP: frame-ancestors https://tangocash.etonica.com` header that
+  // lets us frame it. When the user finishes, the iframe postMessages
+  // back; we tear it down and navigate to /auth/callback.php with the
+  // token.
+  //
+  // Fallback to the old popup flow if anything blocks iframe init.
   var BL_ORIGIN = 'https://brainlock.id';
   var SIGNIN_START_URL = '/auth/start.json.php';
 
   function blOpenSignin(e) {
     e.preventDefault();
 
-    // 1. Open popup IMMEDIATELY (still on the user's click — no blocker).
-    var w = 480, h = 720;
-    var winW = window.innerWidth  || document.documentElement.clientWidth  || screen.width;
-    var winH = window.innerHeight || document.documentElement.clientHeight || screen.height;
-    var left = (window.screenLeft || 0) + (winW - w) / 2;
-    var top  = (window.screenTop  || 0) + (winH - h) / 2;
-    var popup = window.open(
-      'about:blank',
-      'brainlock_signin',
-      'width=' + w + ',height=' + h + ',left=' + left + ',top=' + top + ',resizable=yes,scrollbars=yes'
-    );
-    if (!popup) {
-      alert('Looks like your browser blocked the sign-in popup. Please allow popups for this site and try again.');
-      return;
+    // 1. Build + mount the iframe modal IMMEDIATELY (no flash).
+    var backdrop = document.createElement('div');
+    backdrop.id = 'bl_signin_iframe_backdrop';
+    backdrop.style.cssText = [
+      'position:fixed',
+      'inset:0',
+      'z-index:9998',
+      'background:rgba(5,7,16,0.78)',
+      'backdrop-filter:blur(6px)',
+      '-webkit-backdrop-filter:blur(6px)',
+      'opacity:0',
+      'transition:opacity 200ms ease'
+    ].join(';');
+
+    var iframeWrap = document.createElement('div');
+    iframeWrap.style.cssText = [
+      'position:fixed',
+      'inset:0',
+      'z-index:9999',
+      'display:grid',
+      'place-items:center',
+      'padding:24px',
+      'pointer-events:none'
+    ].join(';');
+
+    var iframe = document.createElement('iframe');
+    iframe.id = 'bl_signin_iframe';
+    iframe.title = 'Sign in with BrainLock';
+    iframe.style.cssText = [
+      'width:min(480px,100%)',
+      'height:min(720px,100%)',
+      'max-height:96vh',
+      'border:0',
+      'border-radius:20px',
+      'background:#0a0e1f',
+      'box-shadow:0 30px 80px -20px rgba(0,0,0,0.6)',
+      'opacity:0',
+      'transform:translateY(10px)',
+      'transition:opacity 220ms ease, transform 220ms ease',
+      'pointer-events:auto'
+    ].join(';');
+    iframeWrap.appendChild(iframe);
+    document.body.appendChild(backdrop);
+    document.body.appendChild(iframeWrap);
+    document.body.style.overflow = 'hidden';
+
+    // Animate in.
+    requestAnimationFrame(function () {
+      backdrop.style.opacity = '1';
+      iframe.style.opacity = '1';
+      iframe.style.transform = 'translateY(0)';
+    });
+
+    function teardown() {
+      backdrop.style.opacity = '0';
+      iframe.style.opacity = '0';
+      setTimeout(function () {
+        try { document.body.removeChild(backdrop); } catch (e) {}
+        try { document.body.removeChild(iframeWrap); } catch (e) {}
+        document.body.style.overflow = '';
+      }, 220);
     }
 
-    // 2. Listen for the auth result.
+    // Esc / backdrop click closes the iframe (cancels sign-in).
+    backdrop.addEventListener('click', function () {
+      window.removeEventListener('message', onMessage);
+      teardown();
+    });
+    var onKey = function (ev) {
+      if (ev.key === 'Escape') {
+        window.removeEventListener('keydown', onKey);
+        window.removeEventListener('message', onMessage);
+        teardown();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+
+    // 2. Listen for the BrainLock postMessage handoff.
     var onMessage = function (ev) {
       if (ev.origin !== BL_ORIGIN) return;
       var data = ev.data || {};
       if (data.type !== 'brainlock:auth' || !data.url) return;
       window.removeEventListener('message', onMessage);
+      window.removeEventListener('keydown', onKey);
+      teardown();
       window.location.href = data.url;
     };
     window.addEventListener('message', onMessage);
 
-    // 3. Fetch the auth URL and redirect the popup.
+    // 3. Fetch the auth URL and point the iframe at it.
     fetch(SIGNIN_START_URL, { method: 'POST', credentials: 'same-origin' })
       .then(function (r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -63,12 +128,13 @@
       .then(function (data) {
         if (!data.url) throw new Error('No URL in start_session response');
         var sep = data.url.indexOf('?') === -1 ? '?' : '&';
-        popup.location.href = data.url + sep + 'embed=popup';
+        iframe.src = data.url + sep + 'embed=iframe';
       })
       .catch(function (err) {
         console.error('[bl_signin] failed to start session:', err);
-        try { popup.close(); } catch (e) {}
         window.removeEventListener('message', onMessage);
+        window.removeEventListener('keydown', onKey);
+        teardown();
         alert('We couldn\'t start sign-in. Please try again.');
       });
   }
