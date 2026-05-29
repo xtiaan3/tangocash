@@ -90,21 +90,31 @@ final class BrainLock
         }
 
         // Transport mode.
-        //   'iframe'   — default, render the BrainLock UI as a full-viewport
-        //                iframe over the partner page. The bundled client
-        //                JS does a capability check at click time and
-        //                silently falls back to 'redirect' if the browser
-        //                can't accept partitioned cookies (Safari ≤17,
-        //                ancient Chrome, etc.). Popup window mode has been
-        //                retired — it produced a dinky 480x720 chrome
-        //                window that looked nothing like the polished
-        //                BrainLock UI.
+        //   'iframe'   — default. Render the BrainLock UI as a full-viewport
+        //                iframe over the partner page. By default the SDK
+        //                uses the SAME-ORIGIN PROXY transport: the iframe
+        //                loads from a path on YOUR own server (default
+        //                /_bl/auth/<sid>) which transparently proxies to
+        //                brainlock.id. Because the iframe is same-site as
+        //                your top-level page, cookies behave as first-party.
+        //                Works on every browser including Safari. You
+        //                must mount BrainLock::handleEmbed() at the
+        //                configured `embed_path` (see below).
         //   'redirect' — full-page navigation to brainlock.id and back.
-        //                Works everywhere. Use this explicitly if you
-        //                don't want the in-page iframe at all.
+        //                Works everywhere with zero server-side mounting.
+        //                Use if you don't want to mount the embed proxy.
         $mode = $config['mode'] ?? 'iframe';
         if (!\in_array($mode, ['iframe', 'redirect'], true)) {
             throw new \InvalidArgumentException('BrainLock: mode must be "iframe" or "redirect".');
+        }
+
+        // embed_path — URL prefix on YOUR site where BrainLock::handleEmbed
+        // is mounted. The iframe and all its XHR/form-POSTs go through
+        // this prefix. Defaults to /_bl. You can change it but it must
+        // be a single path segment.
+        $embedPath = $config['embed_path'] ?? '/_bl';
+        if (!\preg_match('#^/[A-Za-z0-9_-]+$#', $embedPath)) {
+            throw new \InvalidArgumentException('BrainLock: embed_path must look like "/_bl" — single path segment, no trailing slash.');
         }
 
         self::$config = [
@@ -112,7 +122,173 @@ final class BrainLock
             'callback_url' => $config['callback_url'],
             'api_base'     => \rtrim($config['api_base'] ?? self::DEFAULT_API_BASE, '/'),
             'mode'         => $mode,
+            'embed_path'   => $embedPath,
         ];
+    }
+
+    /**
+     * handleEmbed — the same-origin proxy handler.
+     *
+     * Mount this BEFORE your normal routing so it captures any request
+     * under your configured `embed_path` (defaults to /_bl). The
+     * canonical four-line mount:
+     *
+     *     // At the top of your app's router / index.php:
+     *     if (str_starts_with($_SERVER['REQUEST_URI'], '/_bl/')) {
+     *         BrainLock::handleEmbed();
+     *         exit;
+     *     }
+     *
+     * What it does. Every request matching /_bl/<rest> is forwarded to
+     * brainlock.id/<rest> with the original method, body, query string,
+     * and most headers preserved. The response is streamed back to the
+     * browser with status, headers, and body intact. From the browser's
+     * perspective, every request looks like it's coming FROM your own
+     * domain — which means cookies BrainLock sets are stored as
+     * first-party cookies on your origin. No CHIPS, no Storage Access,
+     * no version-sniffing — works in every modern browser.
+     *
+     * Latency cost: one extra hop. Typically 5–20ms on the wire for
+     * partner→BrainLock, negligible against the user-perceived sign-in
+     * time.
+     */
+    public static function handleEmbed(): void
+    {
+        self::ensureConfigured();
+
+        $base    = self::$config['api_base'];
+        $prefix  = self::$config['embed_path'];
+        $reqURI  = $_SERVER['REQUEST_URI'] ?? '/';
+        // Strip the embed_path prefix to get the upstream path+query.
+        if (\strpos($reqURI, $prefix . '/') !== 0 && $reqURI !== $prefix) {
+            \http_response_code(404);
+            echo 'Not found';
+            return;
+        }
+        $upstreamPath = \substr($reqURI, \strlen($prefix));
+        if ($upstreamPath === '') $upstreamPath = '/';
+        $upstreamURL  = $base . $upstreamPath;
+
+        $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+        $body   = \in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true) ? \file_get_contents('php://input') : null;
+
+        // Headers to forward. Drop hop-by-hop and Host (which we rewrite).
+        // Add proxy_base so BrainLock-side template can emit absolute
+        // asset URLs and inject window.BL_API_BASE for client-side
+        // fetch routing.
+        $fwdHeaders = [];
+        $skip = [
+            'host' => true, 'connection' => true, 'content-length' => true,
+            'transfer-encoding' => true, 'keep-alive' => true, 'upgrade' => true,
+            'proxy-authorization' => true, 'proxy-authenticate' => true,
+            'te' => true, 'trailers' => true,
+        ];
+        foreach ($_SERVER as $k => $v) {
+            if (\strpos($k, 'HTTP_') !== 0) continue;
+            $name = \strtolower(\str_replace('_', '-', \substr($k, 5)));
+            if (isset($skip[$name])) continue;
+            $fwdHeaders[] = $name . ': ' . $v;
+        }
+        // Tell brainlock-go this request came through a proxy at our prefix.
+        $fwdHeaders[] = 'X-BL-Proxy-Base: ' . $prefix;
+        // Surface the real client IP for audit / rate-limiting on
+        // BrainLock's side. Preserves any existing forwarded chain.
+        $clientIP = $_SERVER['REMOTE_ADDR'] ?? '';
+        if ($clientIP !== '') {
+            $existing = $_SERVER['HTTP_X_FORWARDED_FOR'] ?? '';
+            $fwdHeaders[] = 'X-Forwarded-For: ' . ($existing ? $existing . ', ' . $clientIP : $clientIP);
+        }
+
+        $ch = \curl_init();
+        \curl_setopt_array($ch, [
+            CURLOPT_URL            => self::insertProxyBaseQuery($upstreamURL, $prefix),
+            CURLOPT_CUSTOMREQUEST  => $method,
+            CURLOPT_HTTPHEADER     => $fwdHeaders,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_HEADER         => true,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT        => 30,
+            CURLOPT_CONNECTTIMEOUT => 4,
+        ]);
+        if ($body !== null && $body !== false && $body !== '') {
+            \curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
+        }
+
+        $raw  = \curl_exec($ch);
+        if ($raw === false) {
+            \http_response_code(502);
+            echo 'Upstream error: ' . \curl_error($ch);
+            \curl_close($ch);
+            return;
+        }
+        $code      = (int)\curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $headerLen = (int)\curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+        \curl_close($ch);
+
+        $headerRaw = \substr($raw, 0, $headerLen);
+        $bodyRaw   = \substr($raw, $headerLen);
+
+        \http_response_code($code);
+        $contentType = '';
+        // Walk response headers; passthrough Set-Cookie + most others, skip
+        // hop-by-hop and CSP frame-ancestors (which we override below).
+        $skipResp = [
+            'connection' => true, 'transfer-encoding' => true, 'content-length' => true,
+            'content-encoding' => true, 'keep-alive' => true, 'upgrade' => true,
+        ];
+        foreach (\preg_split('/\r?\n/', $headerRaw) as $line) {
+            if ($line === '' || \strpos($line, ':') === false) continue;
+            [$name, $value] = \explode(':', $line, 2);
+            $name  = \trim($name);
+            $value = \trim($value);
+            $low   = \strtolower($name);
+            if (isset($skipResp[$low])) continue;
+            if ($low === 'content-type') {
+                $contentType = \strtolower($value);
+            }
+            if ($low === 'content-security-policy') {
+                // BrainLock's CSP allows framing only from a specific origin;
+                // since the iframe now loads from US (same-origin), tighten
+                // to 'self' so no other site can frame our proxied auth UI.
+                \header("Content-Security-Policy: frame-ancestors 'self'");
+                continue;
+            }
+            \header($name . ': ' . $value, \strtolower($name) !== 'set-cookie');
+        }
+
+        // HTML responses get root-relative href/src/action attributes
+        // prefixed with the proxy path so assets resolve through the
+        // proxy. Skipping inline strings ('/api/...' inside JS) — those
+        // are handled by the BrainLock-side fetch/XHR monkey-patch.
+        if (\strpos($contentType, 'text/html') !== false) {
+            $bodyRaw = self::rewriteHTMLPaths($bodyRaw, $prefix);
+        }
+        echo $bodyRaw;
+    }
+
+    /**
+     * Prefix root-relative href/src/action attributes with the proxy
+     * base. The negative lookahead skips `//` (protocol-relative) and
+     * already-prefixed paths.
+     */
+    private static function rewriteHTMLPaths(string $html, string $prefix): string
+    {
+        // Single regex covers all three attributes.
+        return \preg_replace(
+            '#\b(href|src|action)\s*=\s*(["\'])/(?!/|' . \preg_quote(\ltrim($prefix, '/'), '#') . '/)#i',
+            '$1=$2' . $prefix . '/',
+            $html
+        ) ?? $html;
+    }
+
+    /**
+     * Add ?proxy_base=<prefix> to the upstream URL so brainlock-go knows
+     * to emit absolute asset URLs + inject window.BL_API_BASE.
+     */
+    private static function insertProxyBaseQuery(string $url, string $prefix): string
+    {
+        $sep = (\strpos($url, '?') === false) ? '?' : '&';
+        return $url . $sep . 'proxy_base=' . \urlencode($prefix);
     }
 
     /**
@@ -376,24 +552,32 @@ final class BrainLock
     /**
      * Emit the iframe-launcher page. Inline HTML+JS, no external assets.
      *
-     * Capability check runs first. If the browser supports partitioned
-     * cookies (Safari 18.2+, Chrome 118+, Firefox 130+, Edge 118+), an
-     * iframe is injected over the page and the BrainLock UI takes over
-     * the viewport. If not (older Safari especially), the page falls
-     * back to a full-page redirect to brainlock.id — same final state,
-     * just less polish during the auth ceremony.
+     * In proxy mode (the default), the iframe loads from a path on YOUR
+     * own site (e.g. /_bl/auth/<sid>?embed=iframe) — same-origin to the
+     * top-level page so cookies behave as first-party. This works in
+     * every modern browser including Safari.
      *
-     * Either way the partner's callback URL ends up with ?token=… on it
-     * and verify() takes over from there.
+     * The iframe URL is built by rewriting the BrainLock-provided
+     * authUrl: scheme/host are dropped, path/query preserved, prefixed
+     * with the partner's embed_path. The proxy on the partner side
+     * (BrainLock::handleEmbed) then forwards each request to
+     * brainlock.id transparently.
      */
     private static function emitIframeOpener(string $authUrl): void
     {
-        $iframeUrl   = $authUrl . (\strpos($authUrl, '?') === false ? '?' : '&') . 'embed=iframe';
-        $redirectUrl = $authUrl;
-        $apiOrigin   = \parse_url(self::$config['api_base'], PHP_URL_SCHEME) . '://' . \parse_url(self::$config['api_base'], PHP_URL_HOST);
+        $authPath    = \parse_url($authUrl, PHP_URL_PATH);
+        $authQuery   = \parse_url($authUrl, PHP_URL_QUERY);
+        $proxyURL    = self::$config['embed_path'] . $authPath . ($authQuery ? '?' . $authQuery : '');
+        $iframeUrl   = $proxyURL . (\strpos($proxyURL, '?') === false ? '?' : '&') . 'embed=iframe';
+        $redirectUrl = $authUrl; // direct nav to brainlock.id, no proxy involved
+        // postMessage origin: in proxy mode the iframe is on OUR origin,
+        // so the message comes from window.location.origin. Compute at
+        // emit time so the JS can compare exactly.
+        $proxyOrigin = ($_SERVER['HTTPS'] ?? '') === 'on' ? 'https' : 'http';
+        $proxyOrigin .= '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost');
         $iframeUrlJs   = \json_encode($iframeUrl,   JSON_UNESCAPED_SLASHES);
         $redirectUrlJs = \json_encode($redirectUrl, JSON_UNESCAPED_SLASHES);
-        $apiOriginJs   = \json_encode($apiOrigin,   JSON_UNESCAPED_SLASHES);
+        $apiOriginJs   = \json_encode($proxyOrigin, JSON_UNESCAPED_SLASHES);
 
         \header('Cache-Control: no-store, must-revalidate');
         \header('Content-Type: text/html; charset=utf-8');
@@ -428,37 +612,11 @@ final class BrainLock
 (function () {
     var IFRAME_URL   = $iframeUrlJs;
     var REDIRECT_URL = $redirectUrlJs;
-    var BL_ORIGIN    = $apiOriginJs;
+    var SAME_ORIGIN  = $apiOriginJs;
 
-    // Capability check: does this browser support partitioned cookies
-    // (CHIPS)? Without them Safari ≤17 silently drops BrainLock's
-    // session cookies inside the iframe and the user gets stuck on
-    // the signin screen. Sniff by user agent — overkill maybe, but
-    // version-gated and accurate.
-    function supportsPartitionedCookies() {
-        var ua = navigator.userAgent;
-        var isSafari = /Safari\//.test(ua) && !/Chrome|CriOS|FxiOS|EdgiOS|Edg\//.test(ua);
-        if (isSafari) {
-            var m = ua.match(/Version\/(\d+)\.(\d+)/);
-            if (!m) return false;
-            var major = parseInt(m[1], 10), minor = parseInt(m[2], 10);
-            return major > 18 || (major === 18 && minor >= 2);
-        }
-        var chrome = ua.match(/Chrome\/(\d+)/);
-        if (chrome) return parseInt(chrome[1], 10) >= 118;
-        var firefox = ua.match(/Firefox\/(\d+)/);
-        if (firefox) return parseInt(firefox[1], 10) >= 130;
-        return false; // unknown: be conservative, redirect
-    }
-
-    if (!supportsPartitionedCookies()) {
-        // Older browser — give it the redirect experience. Same final
-        // result, no in-page iframe, but it works.
-        window.location.replace(REDIRECT_URL);
-        return;
-    }
-
-    // Modern browser — inject the iframe.
+    // Proxy-mode iframe: same-origin to this page (which is on the
+    // partner's domain). Cookies behave as first-party. No capability
+    // checking needed — works on every browser.
     var iframe = document.createElement('iframe');
     iframe.id = 'bl_iframe';
     iframe.title = 'Sign in with BrainLock';
@@ -467,11 +625,9 @@ final class BrainLock
     requestAnimationFrame(function () { iframe.style.opacity = '1'; });
 
     window.addEventListener('message', function (event) {
-        if (event.origin !== BL_ORIGIN) return;
+        if (event.origin !== SAME_ORIGIN) return;
         var data = event.data || {};
         if (data.type !== 'brainlock:auth' || !data.url) return;
-        // BrainLock has already built the callback URL with ?token=… on
-        // it. Navigate the parent there; verify() consumes the token.
         window.location.href = data.url;
     });
 })();

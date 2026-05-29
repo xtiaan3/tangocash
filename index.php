@@ -1,4 +1,13 @@
 <?php
+// BrainLock embed proxy. Intercept any /_bl/* request and forward it
+// to brainlock.id. Must run BEFORE any other routing so /_bl URLs
+// don't fall into the normal page handlers.
+if (\str_starts_with($_SERVER['REQUEST_URI'] ?? '', '/_bl/') || ($_SERVER['REQUEST_URI'] ?? '') === '/_bl') {
+    require __DIR__ . '/_bootstrap.php';
+    \BrainLock::handleEmbed();
+    exit;
+}
+
 require __DIR__ . '/_demo_data.php';
 
 // Sign-out handlers MUST run before the signed-in→/wallet redirect
