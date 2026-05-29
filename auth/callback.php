@@ -68,9 +68,13 @@ if (empty($identity['sub'])) {
 }
 
 // Sign the user in for this session.
+\error_log('[tc-callback] verify OK sub=' . ($identity['sub'] ?? '?') . ' session_id_before=' . \session_id());
 \session_regenerate_id(true); // privilege change — fresh session ID
+\error_log('[tc-callback] regenerated session_id_after=' . \session_id());
 $_SESSION['bl_user']   = $identity;
 $_SESSION['bl_signed_in_at'] = \time();
+\error_log('[tc-callback] stored bl_user, $_SESSION keys=' . \implode(',', \array_keys($_SESSION)));
+\session_write_close(); // commit BEFORE redirect — belt + suspenders
 
 \header('Location: /wallet.php');
 exit;
