@@ -31,73 +31,41 @@
     e.preventDefault();
 
     // 1. Build + mount the iframe modal IMMEDIATELY (no flash).
-    var backdrop = document.createElement('div');
-    backdrop.id = 'bl_signin_iframe_backdrop';
-    backdrop.style.cssText = [
-      'position:fixed',
-      'inset:0',
-      'z-index:9998',
-      'background:rgba(5,7,16,0.78)',
-      'backdrop-filter:blur(6px)',
-      '-webkit-backdrop-filter:blur(6px)',
-      'opacity:0',
-      'transition:opacity 200ms ease'
-    ].join(';');
-
-    var iframeWrap = document.createElement('div');
-    iframeWrap.style.cssText = [
-      'position:fixed',
-      'inset:0',
-      'z-index:9999',
-      'display:grid',
-      'place-items:center',
-      'padding:24px',
-      'pointer-events:none'
-    ].join(';');
-
+    // Full-viewport iframe. The BrainLock overlay inside it has its own
+    // dim/backdrop and scales itself to whatever viewport we give it —
+    // same as visiting brainlock.id directly. No outer dim, no centered
+    // card; just hand it the whole screen.
     var iframe = document.createElement('iframe');
     iframe.id = 'bl_signin_iframe';
     iframe.title = 'Sign in with BrainLock';
     iframe.style.cssText = [
-      'width:min(480px,100%)',
-      'height:min(720px,100%)',
-      'max-height:96vh',
+      'position:fixed',
+      'inset:0',
+      'width:100vw',
+      'height:100vh',
       'border:0',
-      'border-radius:20px',
-      'background:#0a0e1f',
-      'box-shadow:0 30px 80px -20px rgba(0,0,0,0.6)',
+      'z-index:9999',
+      'background:transparent',
       'opacity:0',
-      'transform:translateY(10px)',
-      'transition:opacity 220ms ease, transform 220ms ease',
-      'pointer-events:auto'
+      'transition:opacity 220ms ease'
     ].join(';');
-    iframeWrap.appendChild(iframe);
-    document.body.appendChild(backdrop);
-    document.body.appendChild(iframeWrap);
+    document.body.appendChild(iframe);
     document.body.style.overflow = 'hidden';
 
     // Animate in.
-    requestAnimationFrame(function () {
-      backdrop.style.opacity = '1';
-      iframe.style.opacity = '1';
-      iframe.style.transform = 'translateY(0)';
-    });
+    requestAnimationFrame(function () { iframe.style.opacity = '1'; });
 
     function teardown() {
-      backdrop.style.opacity = '0';
       iframe.style.opacity = '0';
       setTimeout(function () {
-        try { document.body.removeChild(backdrop); } catch (e) {}
-        try { document.body.removeChild(iframeWrap); } catch (e) {}
+        try { document.body.removeChild(iframe); } catch (e) {}
         document.body.style.overflow = '';
       }, 220);
     }
 
-    // Esc / backdrop click closes the iframe (cancels sign-in).
-    backdrop.addEventListener('click', function () {
-      window.removeEventListener('message', onMessage);
-      teardown();
-    });
+    // Esc closes the iframe (cancels sign-in). No backdrop click since
+    // the iframe is the whole viewport — the user uses the X inside
+    // the BrainLock UI to cancel.
     var onKey = function (ev) {
       if (ev.key === 'Escape') {
         window.removeEventListener('keydown', onKey);
