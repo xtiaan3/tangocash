@@ -191,6 +191,13 @@ final class BrainLock
         }
         // Tell brainlock-go this request came through a proxy at our prefix.
         $fwdHeaders[] = 'X-BL-Proxy-Base: ' . $prefix;
+        // Force identity encoding from upstream — we body-rewrite HTML
+        // responses inline, can't do that on gzipped bytes. Drop any
+        // browser-provided Accept-Encoding from our forwarded list.
+        $fwdHeaders = \array_values(\array_filter($fwdHeaders, function ($h) {
+            return \stripos($h, 'accept-encoding:') !== 0;
+        }));
+        $fwdHeaders[] = 'Accept-Encoding: identity';
         // Surface the real client IP for audit / rate-limiting on
         // BrainLock's side. Preserves any existing forwarded chain.
         $clientIP = $_SERVER['REMOTE_ADDR'] ?? '';
