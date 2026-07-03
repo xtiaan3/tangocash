@@ -1,0 +1,403 @@
+/* ==========================================================================
+   TangoCash V2 — wandr-inspired top bar + asymmetric, numbered sections.
+   PREVIEW ONLY. Loaded only by _header_v2.php / index_v2.php.
+   ----------------------------------------------------------------------
+   Spirit retained from V1: deep-navy base, atmospheric blobs, brand
+   gradient (orange → pink → purple). What changes:
+     - Editorial top bar: numbered all-caps nav, persistent right-side CTA
+     - Sections differ by TONE + LAYOUT instead of all looking like cards
+       (alternating tonal washes, oversized numbered anchors, asymmetric
+       text/image rhythm)
+     - One oversized headline per section, generous whitespace
+   All v1 .tc_* classes still resolve from tangocash.css; we only override
+   selectively here via .tc_v2_page scoping where needed.
+   ========================================================================== */
+
+/* ---------- Page-level tonal layering ----------
+   Section backgrounds alternate base → lit → base → shadow so panels
+   stop reading as identical cards. */
+.tc_v2_page {
+  /* Reuse existing tokens — no new colors. */
+  --tc_v2_panel_base:   var(--tc_bg);
+  --tc_v2_panel_lit:    var(--tc_bg_elev);
+  --tc_v2_panel_shadow: #060912;        /* darker pocket — sits between deep-navy and pure black */
+  --tc_v2_rule:         rgba(255,255,255,0.06);
+  --tc_v2_num_clr:      var(--tc_text_subtle);
+  --tc_v2_num_accent:   var(--tc_pink);
+}
+
+/* ============================================================
+   Top bar
+   ============================================================ */
+.tc_v2_header {
+  position: sticky; top: 0; z-index: 50;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: clamp(20px, 4vw, 60px);
+  padding: 16px clamp(20px, 4vw, 56px);
+  background: rgba(10, 14, 31, 0.72);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+  border-bottom: 1px solid var(--tc_v2_rule);
+}
+.tc_v2_brand {
+  display: inline-flex; align-items: center;
+  text-decoration: none;
+}
+.tc_v2_brand_logo {
+  height: 32px; width: auto; display: block;
+}
+
+.tc_v2_nav {
+  display: flex; justify-content: center;
+  gap: clamp(18px, 3.5vw, 44px);
+}
+.tc_v2_nav_item {
+  display: inline-flex; align-items: baseline; gap: 8px;
+  text-decoration: none;
+  color: var(--tc_text);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 6px 2px;
+  position: relative;
+  transition: color 0.18s ease;
+}
+.tc_v2_nav_item .tc_v2_nav_num {
+  color: var(--tc_v2_num_clr);
+  font-size: 11px;
+  font-feature-settings: "tnum";
+  transition: color 0.18s ease;
+}
+.tc_v2_nav_item:hover { color: var(--tc_text); }
+.tc_v2_nav_item:hover .tc_v2_nav_num { color: var(--tc_v2_num_accent); }
+.tc_v2_nav_item.is_active .tc_v2_nav_num { color: var(--tc_v2_num_accent); }
+.tc_v2_nav_item.is_active::after {
+  content: "";
+  position: absolute; left: 0; right: 0; bottom: -2px;
+  height: 2px;
+  background: var(--tc_grad_brand);
+  border-radius: 2px;
+}
+
+.tc_v2_right {
+  display: inline-flex; align-items: center; gap: 14px;
+}
+.tc_v2_cta {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: var(--tc_grad_brand);
+  color: #fff;
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  padding: 10px 18px;
+  border-radius: 999px;
+  box-shadow: 0 6px 18px rgba(255, 61, 139, 0.25);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+.tc_v2_cta:hover { transform: translateY(-1px); box-shadow: 0 10px 24px rgba(255, 61, 139, 0.32); }
+.tc_v2_cta_icon { height: 16px; width: auto; display: block; }
+
+.tc_v2_chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid var(--tc_v2_rule);
+  color: var(--tc_text);
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 8px 14px;
+  border-radius: 999px;
+}
+.tc_v2_chip_dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--tc_pos);
+  box-shadow: 0 0 0 3px rgba(34, 211, 154, 0.18);
+}
+
+.tc_v2_hamburger { /* same visual as v1 hamburger; just here so spacing works */ }
+
+@media (max-width: 900px) {
+  .tc_v2_nav { display: none; }
+  .tc_v2_header { grid-template-columns: auto 1fr auto; }
+}
+@media (max-width: 560px) {
+  .tc_v2_cta { padding: 8px 12px; font-size: 11px; }
+  .tc_v2_cta_icon { height: 14px; }
+}
+
+/* ============================================================
+   Sections — numbered anchors + tonal layering
+   ============================================================ */
+.tc_v2_section {
+  position: relative;
+  padding: clamp(64px, 9vw, 140px) clamp(20px, 4vw, 56px);
+}
+.tc_v2_section_inner {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+/* Tone variants — each section gets one. Backgrounds wash gently
+   instead of forming hard card edges, so the page reads as one
+   continuous surface with rhythm. */
+.tc_v2_section_base   { background: transparent; }
+.tc_v2_section_lit    { background: linear-gradient(180deg, transparent 0%, var(--tc_v2_panel_lit) 18%, var(--tc_v2_panel_lit) 82%, transparent 100%); }
+.tc_v2_section_shadow { background: var(--tc_v2_panel_shadow); }
+
+/* Oversized numbered anchor — wandr's "01 /" pattern, adapted.
+   Sits above the section headline as a typographic landmark. */
+.tc_v2_marker {
+  display: inline-flex; align-items: baseline; gap: 14px;
+  margin-bottom: clamp(20px, 3vw, 36px);
+  font-feature-settings: "tnum";
+}
+.tc_v2_marker_num {
+  font-size: clamp(56px, 9vw, 120px);
+  font-weight: 700;
+  line-height: 0.9;
+  letter-spacing: -0.02em;
+  background: var(--tc_grad_brand);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.tc_v2_marker_label {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--tc_text_dim);
+}
+
+/* Section headline — oversized, tight tracking. Used once per panel. */
+.tc_v2_h {
+  font-size: clamp(34px, 5.6vw, 72px);
+  line-height: 1.04;
+  letter-spacing: -0.02em;
+  font-weight: 700;
+  color: var(--tc_text);
+  margin: 0 0 clamp(16px, 2vw, 28px);
+  max-width: 18ch;
+}
+.tc_v2_h_wide { max-width: 26ch; }
+
+.tc_v2_lede {
+  font-size: clamp(16px, 1.4vw, 19px);
+  line-height: 1.6;
+  color: var(--tc_text_dim);
+  max-width: 60ch;
+  margin: 0 0 clamp(20px, 3vw, 36px);
+}
+
+/* ============================================================
+   Hero — restated. Oversized headline, less chrome, no card.
+   ============================================================ */
+.tc_v2_hero {
+  position: relative;
+  padding: clamp(80px, 12vw, 180px) clamp(20px, 4vw, 56px) clamp(48px, 7vw, 100px);
+}
+.tc_v2_hero_inner {
+  max-width: 1100px; margin: 0 auto;
+}
+.tc_v2_hero_eyebrow {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--tc_text_subtle);
+  margin-bottom: 22px;
+}
+.tc_v2_hero_h {
+  font-size: clamp(48px, 8vw, 112px);
+  font-weight: 700;
+  line-height: 0.96;
+  letter-spacing: -0.025em;
+  margin: 0 0 28px;
+  max-width: 14ch;
+  color: var(--tc_text);
+}
+.tc_v2_hero_h em {
+  font-style: normal;
+  background: var(--tc_grad_brand);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.tc_v2_hero_sub {
+  font-size: clamp(17px, 1.6vw, 22px);
+  line-height: 1.55;
+  color: var(--tc_text_dim);
+  max-width: 58ch;
+  margin: 0 0 36px;
+}
+.tc_v2_hero_actions {
+  display: inline-flex; align-items: center; gap: 18px; flex-wrap: wrap;
+}
+.tc_v2_hero_btn {
+  display: inline-flex; align-items: center; gap: 10px;
+  background: var(--tc_grad_brand);
+  color: #fff;
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 16px 26px;
+  border-radius: 999px;
+  box-shadow: 0 14px 30px rgba(255, 61, 139, 0.28);
+}
+.tc_v2_hero_btn img { height: 20px; width: auto; }
+.tc_v2_hero_btn_ghost {
+  background: transparent;
+  border: 1px solid var(--tc_border_2);
+  color: var(--tc_text);
+  box-shadow: none;
+}
+
+/* ============================================================
+   Section layouts — asymmetric two-column rhythms
+   ============================================================ */
+/* Layout A — text-left + visual-right, generous gutter. */
+.tc_v2_split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: clamp(28px, 5vw, 80px);
+  align-items: center;
+}
+/* Layout B — reverse: visual-left + text-right. */
+.tc_v2_split_reverse > :first-child { order: 2; }
+.tc_v2_split_reverse > :last-child  { order: 1; }
+@media (max-width: 820px) {
+  .tc_v2_split { grid-template-columns: 1fr; }
+  .tc_v2_split_reverse > :first-child,
+  .tc_v2_split_reverse > :last-child { order: initial; }
+}
+
+/* Visual panel — used for the code block or other imagery, framed in a
+   tinted-gradient surround so it reads as separate from body text without
+   being a hard-edged card. */
+.tc_v2_visual {
+  position: relative;
+  border-radius: 18px;
+  padding: 22px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%);
+  border: 1px solid var(--tc_v2_rule);
+}
+
+/* ============================================================
+   Code block tweak — when inside .tc_v2_visual, drop the outer
+   chrome so the existing tc_codeblock visually integrates.
+   ============================================================ */
+.tc_v2_visual .tc_codeblock { margin: 0; }
+
+/* ============================================================
+   Dev-Lens 6-grid — break into 3+3 with a thin rule between
+   so it doesn't read as one big card slab.
+   ============================================================ */
+.tc_v2_lens {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(20px, 2.4vw, 36px);
+}
+@media (max-width: 980px) { .tc_v2_lens { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px) { .tc_v2_lens { grid-template-columns: 1fr; } }
+
+.tc_v2_lens_item {
+  padding: 28px 24px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.025);
+  border: 1px solid var(--tc_v2_rule);
+}
+.tc_v2_lens_kicker {
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--tc_pink);
+  margin-bottom: 12px;
+}
+.tc_v2_lens_h {
+  font-size: 22px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  margin: 0 0 10px;
+  color: var(--tc_text);
+}
+.tc_v2_lens_p {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--tc_text_dim);
+  margin: 0;
+}
+
+/* ============================================================
+   "Three ways in" — asymmetric (1 hero card + 2 stacked thin)
+   instead of three identical buckets.
+   ============================================================ */
+.tc_v2_ways {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+  gap: clamp(20px, 3vw, 32px);
+}
+.tc_v2_ways_stack {
+  display: grid; grid-template-rows: 1fr 1fr; gap: clamp(20px, 3vw, 32px);
+}
+@media (max-width: 820px) {
+  .tc_v2_ways { grid-template-columns: 1fr; }
+}
+
+.tc_v2_way {
+  display: block;
+  padding: 32px 28px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--tc_v2_rule);
+  text-decoration: none;
+  color: var(--tc_text);
+  transition: transform 0.18s ease, border-color 0.18s ease;
+}
+.tc_v2_way:hover { transform: translateY(-2px); border-color: var(--tc_border_2); }
+.tc_v2_way_lead { /* the big one on the left */
+  background:
+    linear-gradient(180deg, rgba(255, 61, 139, 0.10) 0%, rgba(124, 58, 237, 0.05) 100%),
+    rgba(255,255,255,0.03);
+}
+.tc_v2_way_kicker {
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--tc_pink);
+  margin-bottom: 10px;
+}
+.tc_v2_way_h {
+  font-size: clamp(20px, 2.2vw, 28px);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+.tc_v2_way_meta {
+  font-size: 14px;
+  color: var(--tc_text_dim);
+  margin: 0 0 14px;
+  line-height: 1.5;
+}
+.tc_v2_way_arrow {
+  font-size: 18px;
+  color: var(--tc_pink);
+}
+
+/* ============================================================
+   Subtle rhythm element — repeating thin gradient rule.
+   Used between sections that share the same tone, so the page
+   still has a visible "beat" without hard borders.
+   ============================================================ */
+.tc_v2_rule {
+  height: 1px;
+  border: 0;
+  margin: 0;
+  background: linear-gradient(90deg, transparent 0%, var(--tc_v2_rule) 50%, transparent 100%);
+}

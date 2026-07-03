@@ -1,0 +1,568 @@
+/* ==========================================================================
+   TangoCash V5 — wandr.studio, chunky-pill menu edition.
+   PREVIEW ONLY. Loaded only by _header_v5.php / index_v5.php.
+   Standalone — does NOT inherit from v1/v2/v3/v4.
+   ----------------------------------------------------------------------
+   Only difference from v4: the top bar. Page content + visual styling
+   below the bar is identical to v4 (Anton condensed display, cream bg,
+   dark services slab, etc.).
+   ----------------------------------------------------------------------
+   Menu changes:
+     - Brand pill is taller (64px) with a prominent vertical | separator
+       between the logo block and the "P2P WALLET" subtitle
+     - Right side is a *cluster* (nav pills + burger) sized to match the
+       brand pill's vertical rhythm exactly
+     - Each nav item is a chunky pill (64px height, 14px caps text)
+     - Hamburger circle is 64px to match
+   ----------------------------------------------------------------------
+   What v3 missed and v4 nails:
+     - Multi-pill nav: every nav item is its OWN black capsule
+     - Cream/warm-off-white background (#F4F4F2)
+     - HUGE two-tone display headlines (Anton): solid black first part,
+       muted gray second part; can drop in a neon-gradient third tone
+       for our TangoCash twist
+     - Dark services slab with oversized service names cropping the column
+     - White-pill CTA with starburst icon
+     - DRIVEN BY DESIGN — style marquee in soft gray
+   ========================================================================== */
+
+*,*::before,*::after { box-sizing: border-box; }
+
+.tc_v5_page {
+  --tc_v5_bg:        #F4F4F2;
+  --tc_v5_bg_dark:   #0B0B0E;
+  --tc_v5_ink:       #0B0B0E;
+  --tc_v5_ink_2:    #3A3A40;
+  --tc_v5_ink_dim:  #8A8A8E;
+  --tc_v5_mute:     #C8C8C4;
+  --tc_v5_paper:    #FFFFFF;
+  --tc_v5_rule:     rgba(11,11,14,0.10);
+
+  --tc_v5_neon_orange: #ff6f3c;
+  --tc_v5_neon_pink:   #ff3d8b;
+  --tc_v5_neon_violet: #7c3aed;
+  --tc_v5_neon_grad:   linear-gradient(90deg, #ff6f3c 0%, #ff3d8b 50%, #7c3aed 100%);
+
+  --tc_v5_font_body:    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --tc_v5_font_display: "Anton", "Inter", -apple-system, sans-serif;
+  --tc_v5_pad_x: clamp(16px, 3.6vw, 56px);
+
+  margin: 0;
+  background: var(--tc_v5_bg);
+  color: var(--tc_v5_ink);
+  font-family: var(--tc_v5_font_body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.55;
+}
+.tc_v5_page.tc_v5_drawer_open { overflow: hidden; }
+
+/* ============================================================
+   Top bar — chunky-pill nav (wandr-faithful)
+   Everything in this section sits at 64px height; the brand pill
+   on the left and the right cluster (nav + burger) read as one
+   horizontal beat across the bar.
+   ============================================================ */
+:root { --tc_v5_pill_h: 64px; }
+
+.tc_v5_topbar {
+  position: sticky; top: 0; z-index: 50;
+  display: flex; justify-content: space-between; align-items: center;
+  gap: clamp(16px, 3vw, 36px);
+  padding: 18px var(--tc_v5_pad_x);
+  background: transparent;
+}
+.tc_v5_topbar::before {
+  content: "";
+  position: absolute; inset: 0;
+  background: linear-gradient(180deg, rgba(244,244,242,0.92) 0%, rgba(244,244,242,0) 100%);
+  z-index: -1;
+}
+
+/* ---------- Brand pill (left) — single chunky pill ---------- */
+.tc_v5_brandpill {
+  display: inline-flex; align-items: stretch;
+  height: var(--tc_v5_pill_h);
+  background: var(--tc_v5_ink);
+  color: var(--tc_v5_paper);
+  border-radius: 999px;
+  text-decoration: none;
+  line-height: 1;
+  overflow: hidden;
+  user-select: none;
+}
+.tc_v5_brandpill_logo {
+  display: inline-flex; align-items: center; gap: 12px;
+  padding: 0 22px 0 28px;
+}
+.tc_v5_brandpill_star {
+  font-size: 22px;
+  background: var(--tc_v5_neon_grad);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.tc_v5_brandpill_word {
+  font-family: var(--tc_v5_font_display);
+  font-size: 28px;
+  letter-spacing: 0.01em;
+}
+.tc_v5_brandpill_sep {
+  width: 1px;
+  align-self: stretch;
+  background: rgba(255,255,255,0.22);
+  margin: 16px 0;
+}
+.tc_v5_brandpill_sub {
+  display: inline-flex; align-items: center;
+  padding: 0 28px 0 20px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  color: rgba(255,255,255,0.72);
+}
+@media (max-width: 700px) {
+  .tc_v5_brandpill_sub, .tc_v5_brandpill_sep { display: none; }
+}
+
+/* ---------- Right cluster (nav pills + burger) ---------- */
+.tc_v5_cluster {
+  display: inline-flex; align-items: center;
+  gap: 8px;
+}
+.tc_v5_nav {
+  display: inline-flex; align-items: center;
+  gap: 8px;
+}
+.tc_v5_pill {
+  display: inline-flex; align-items: center; gap: 10px;
+  height: var(--tc_v5_pill_h);
+  background: var(--tc_v5_ink);
+  color: var(--tc_v5_paper);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  padding: 0 26px;
+  border-radius: 999px;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+  white-space: nowrap;
+  line-height: 1;
+}
+.tc_v5_pill:hover {
+  background: var(--tc_v5_paper);
+  color: var(--tc_v5_ink);
+  box-shadow: inset 0 0 0 1px var(--tc_v5_ink);
+}
+.tc_v5_pill.is_active {
+  background: var(--tc_v5_paper);
+  color: var(--tc_v5_ink);
+  box-shadow: inset 0 0 0 1px var(--tc_v5_ink);
+}
+
+.tc_v5_pill_cta {
+  background: var(--tc_v5_neon_grad);
+  color: #fff;
+  letter-spacing: 0.14em;
+}
+.tc_v5_pill_cta:hover {
+  background: var(--tc_v5_neon_grad);
+  color: #fff;
+  box-shadow: 0 8px 22px rgba(255, 61, 139, 0.32);
+  transform: translateY(-1px);
+}
+.tc_v5_pill_star { font-size: 15px; }
+
+.tc_v5_pill_chip {
+  background: var(--tc_v5_paper);
+  color: var(--tc_v5_ink);
+  box-shadow: inset 0 0 0 1px var(--tc_v5_ink);
+}
+.tc_v5_pill_dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #22d39a;
+  box-shadow: 0 0 0 3px rgba(34, 211, 154, 0.18);
+}
+
+/* ---------- Burger (large circle) ---------- */
+.tc_v5_burger {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--tc_v5_pill_h); height: var(--tc_v5_pill_h);
+  background: var(--tc_v5_ink);
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.18s ease, transform 0.18s ease;
+}
+.tc_v5_burger:hover { transform: translateY(-1px); }
+.tc_v5_burger span {
+  position: absolute; left: 20px; right: 20px; height: 1.6px;
+  background: var(--tc_v5_paper);
+  border-radius: 2px;
+}
+.tc_v5_burger span:nth-child(1) { top: 26px; }
+.tc_v5_burger span:nth-child(2) { top: 36px; }
+
+/* ---------- Responsive ---------- */
+/* At <= 920px hide the nav pills (drawer takes over); brand pill +
+   sign-in pill + burger remain inside the cluster, exactly like the
+   wandr mobile screenshot. */
+@media (max-width: 920px) {
+  .tc_v5_nav .tc_v5_pill:not(.tc_v5_pill_cta):not(.tc_v5_pill_chip) { display: none; }
+}
+/* At <= 560px the sign-in pill collapses to just the icon to keep the
+   bar from wrapping on small phones; the drawer item still says the
+   full thing. */
+@media (max-width: 560px) {
+  .tc_v5_pill_cta { padding: 0 18px; font-size: 12px; }
+  :root { --tc_v5_pill_h: 56px; }
+}
+@media (max-width: 400px) {
+  .tc_v5_brandpill_word { font-size: 24px; }
+  .tc_v5_brandpill_logo { padding: 0 16px 0 22px; }
+}
+
+/* ============================================================
+   Drawer
+   ============================================================ */
+.tc_v5_drawer_back {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(11,11,14,0.42);
+  backdrop-filter: blur(6px);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+.tc_v5_drawer_back.is_open { opacity: 1; pointer-events: auto; }
+.tc_v5_drawer {
+  position: fixed; top: 0; right: 0; bottom: 0;
+  width: min(92vw, 380px);
+  background: var(--tc_v5_paper);
+  z-index: 70;
+  transform: translateX(110%);
+  transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+  padding: 28px;
+  display: flex; flex-direction: column;
+}
+.tc_v5_drawer.is_open { transform: translateX(0); }
+.tc_v5_drawer_close {
+  align-self: flex-end;
+  background: none; border: 0; padding: 6px;
+  font-size: 32px; line-height: 1; cursor: pointer; color: var(--tc_v5_ink);
+}
+.tc_v5_drawer_nav { display: flex; flex-direction: column; gap: 0; margin-top: 18px; }
+.tc_v5_drawer_item {
+  display: block;
+  text-decoration: none; color: var(--tc_v5_ink);
+  font-family: var(--tc_v5_font_display);
+  font-size: 32px;
+  letter-spacing: 0.01em;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--tc_v5_rule);
+}
+.tc_v5_drawer_item_cta {
+  margin-top: 12px;
+  background: var(--tc_v5_ink); color: #fff;
+  text-align: center;
+  border-radius: 999px;
+  padding: 16px 20px;
+  border: 0;
+  font-family: var(--tc_v5_font_body);
+  font-size: 14px; font-weight: 600; letter-spacing: 0.04em;
+}
+.tc_v5_drawer_section_label {
+  font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--tc_v5_ink_dim);
+  margin: 24px 0 6px;
+}
+.tc_v5_drawer_item_quiet {
+  font-family: var(--tc_v5_font_body);
+  font-size: 15px; font-weight: 500;
+  padding: 8px 0; border: 0;
+}
+
+/* ============================================================
+   Hero — two-tone HUGE display headline (wandr signature)
+   ============================================================ */
+.tc_v5_hero {
+  padding: clamp(64px, 9vw, 130px) var(--tc_v5_pad_x) clamp(48px, 6vw, 90px);
+  text-align: center;
+}
+.tc_v5_hero_eyebrow {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--tc_v5_ink_2);
+  margin-bottom: clamp(24px, 3vw, 40px);
+}
+.tc_v5_hero_eyebrow_star {
+  font-size: 18px; color: var(--tc_v5_neon_pink);
+}
+.tc_v5_display {
+  font-family: var(--tc_v5_font_display);
+  font-size: clamp(48px, 9vw, 144px);
+  line-height: 0.95;
+  letter-spacing: -0.005em;
+  text-transform: uppercase;
+  margin: 0 auto;
+  max-width: 18ch;
+}
+.tc_v5_display_solid { color: var(--tc_v5_ink); }
+.tc_v5_display_mute  { color: var(--tc_v5_mute); }
+.tc_v5_display_neon  {
+  background: var(--tc_v5_neon_grad);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.tc_v5_hero_sub {
+  margin: clamp(24px, 3vw, 40px) auto 0;
+  max-width: 56ch;
+  font-size: clamp(15px, 1.2vw, 18px);
+  color: var(--tc_v5_ink_2);
+  line-height: 1.6;
+}
+.tc_v5_hero_cta_wrap {
+  display: flex; justify-content: center;
+  margin-top: clamp(28px, 3.5vw, 48px);
+}
+.tc_v5_cta_white {
+  display: inline-flex; align-items: center; gap: 12px;
+  background: var(--tc_v5_paper);
+  color: var(--tc_v5_ink);
+  text-decoration: none;
+  font-family: var(--tc_v5_font_body);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 18px 30px;
+  border-radius: 999px;
+  border: 1px solid var(--tc_v5_ink);
+  transition: transform 0.18s ease;
+}
+.tc_v5_cta_white:hover { transform: translateY(-1px); }
+.tc_v5_cta_white_star {
+  font-size: 16px;
+  color: var(--tc_v5_neon_pink);
+}
+
+/* ============================================================
+   Marquee — light gray, big condensed font, DRIVEN BY DESIGN style.
+   ============================================================ */
+.tc_v5_marquee {
+  overflow: hidden;
+  padding: clamp(20px, 2vw, 32px) 0;
+}
+.tc_v5_marquee_track {
+  display: inline-flex; align-items: center; gap: 36px;
+  white-space: nowrap;
+  animation: tc_v5_marquee 34s linear infinite;
+  padding-left: 36px;
+  will-change: transform;
+}
+.tc_v5_marquee_word {
+  font-family: var(--tc_v5_font_display);
+  font-size: clamp(36px, 5vw, 72px);
+  letter-spacing: 0;
+  text-transform: uppercase;
+  color: var(--tc_v5_mute);
+}
+.tc_v5_marquee_star {
+  font-size: clamp(28px, 4vw, 56px);
+  color: var(--tc_v5_mute);
+}
+@keyframes tc_v5_marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+/* ============================================================
+   Services slab — DARK section, big numbered service names that
+   crop the column, body text on right, asterisk-bullet sublist.
+   ============================================================ */
+.tc_v5_slab {
+  background: var(--tc_v5_bg_dark);
+  color: var(--tc_v5_paper);
+  padding: clamp(48px, 7vw, 110px) var(--tc_v5_pad_x);
+}
+.tc_v5_slab_inner { max-width: 1320px; margin: 0 auto; }
+
+.tc_v5_slab_kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 500;
+  letter-spacing: 0.22em; text-transform: uppercase;
+  color: rgba(255,255,255,0.55);
+  margin-bottom: clamp(32px, 4vw, 56px);
+}
+.tc_v5_slab_kicker_star { color: var(--tc_v5_neon_pink); font-size: 16px; }
+
+.tc_v5_panel {
+  display: grid;
+  grid-template-columns: 60px minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: clamp(20px, 4vw, 56px);
+  align-items: start;
+  padding: clamp(40px, 5vw, 80px) 0;
+  border-top: 1px solid rgba(255,255,255,0.12);
+  position: relative;
+}
+.tc_v5_panel:last-child { border-bottom: 1px solid rgba(255,255,255,0.12); }
+@media (max-width: 900px) {
+  .tc_v5_panel { grid-template-columns: 1fr; gap: 20px; }
+}
+
+.tc_v5_panel_num {
+  font-size: 16px;
+  font-weight: 500;
+  color: rgba(255,255,255,0.55);
+  padding-top: clamp(10px, 1vw, 22px);
+}
+.tc_v5_panel_title {
+  font-family: var(--tc_v5_font_display);
+  font-size: clamp(54px, 8.5vw, 138px);
+  line-height: 0.92;
+  text-transform: uppercase;
+  letter-spacing: -0.005em;
+  color: var(--tc_v5_paper);
+  margin: 0;
+}
+.tc_v5_panel_title_mute {
+  color: rgba(255,255,255,0.32);
+}
+.tc_v5_panel_title em {
+  font-style: normal;
+  background: var(--tc_v5_neon_grad);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.tc_v5_panel_body {
+  font-size: clamp(15px, 1.15vw, 17px);
+  line-height: 1.65;
+  color: rgba(255,255,255,0.78);
+  margin: 0 0 20px;
+}
+.tc_v5_panel_bullets {
+  list-style: none; padding: 0; margin: 18px 0 0;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.tc_v5_panel_bullets li {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--tc_v5_paper);
+  position: relative;
+  padding-left: 22px;
+}
+.tc_v5_panel_bullets li::before {
+  content: "✱";
+  position: absolute; left: 0; top: 0;
+  color: var(--tc_v5_neon_pink);
+  font-size: 14px;
+}
+
+/* Floating accent — wandr's 3D-illustration overlap, done as a soft
+   neon-gradient blob that crosses the column gutter. Used on panel 02. */
+.tc_v5_panel_blob {
+  position: absolute;
+  pointer-events: none;
+  width: clamp(180px, 18vw, 280px);
+  height: clamp(180px, 18vw, 280px);
+  border-radius: 32px;
+  background: var(--tc_v5_neon_grad);
+  filter: blur(2px);
+  opacity: 0.85;
+  transform: rotate(-6deg);
+  top: 32%;
+  left: 28%;
+  z-index: 1;
+  box-shadow: 0 30px 60px rgba(255, 61, 139, 0.32);
+}
+.tc_v5_panel_blob::before {
+  content: "✱";
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  color: rgba(255,255,255,0.85);
+  font-size: clamp(80px, 9vw, 140px);
+  font-family: var(--tc_v5_font_display);
+}
+@media (max-width: 900px) {
+  .tc_v5_panel_blob { display: none; }
+}
+
+/* Bring text above the blob so it overlaps wandr-style. */
+.tc_v5_panel_title, .tc_v5_panel_text { position: relative; z-index: 2; }
+
+/* ============================================================
+   Code slab — light card on cream bg, used in the standalone
+   integration moment outside the dark slab.
+   ============================================================ */
+.tc_v5_codecard {
+  max-width: 720px; margin: 0 auto;
+  background: #0B0B0E; color: #f0f0f3;
+  border-radius: 18px;
+  overflow: hidden;
+  font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  box-shadow: 0 30px 60px rgba(11,11,14,0.18);
+}
+.tc_v5_codecard_head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  font-size: 11px;
+  color: rgba(255,255,255,0.55);
+}
+.tc_v5_codecard_dot { width: 10px; height: 10px; border-radius: 50%; }
+.tc_v5_codecard_dot_r { background: #ff5f57; }
+.tc_v5_codecard_dot_a { background: #ffbd2e; }
+.tc_v5_codecard_dot_g { background: #28c840; }
+.tc_v5_codecard_file { margin-left: 8px; }
+.tc_v5_codecard_body {
+  margin: 0;
+  padding: 22px 24px;
+  overflow-x: auto;
+  white-space: pre;
+}
+.tc_v5_codecard_body .k { color: #ff6f3c; }
+.tc_v5_codecard_body .s { color: #22d39a; }
+.tc_v5_codecard_body .c { color: rgba(255,255,255,0.45); font-style: italic; }
+.tc_v5_codecard_body .v { color: #ff3d8b; }
+
+/* ============================================================
+   Closer — cream bg, big two-tone headline + white pill CTA
+   ============================================================ */
+.tc_v5_closer {
+  padding: clamp(64px, 9vw, 140px) var(--tc_v5_pad_x);
+  text-align: center;
+}
+.tc_v5_closer_label {
+  font-size: 12px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--tc_v5_ink_dim);
+  margin-bottom: 24px;
+}
+
+/* ============================================================
+   Footer — dark slab, simple two-column
+   ============================================================ */
+.tc_v5_footer {
+  background: var(--tc_v5_bg_dark);
+  color: rgba(255,255,255,0.65);
+  padding: clamp(36px, 5vw, 60px) var(--tc_v5_pad_x);
+  font-size: 13px;
+}
+.tc_v5_footer_inner {
+  max-width: 1320px; margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+}
+@media (max-width: 600px) { .tc_v5_footer_inner { grid-template-columns: 1fr; } }
+.tc_v5_footer_right { text-align: right; }
+@media (max-width: 600px) { .tc_v5_footer_right { text-align: left; } }
+.tc_v5_footer a {
+  color: rgba(255,255,255,0.85);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(255,255,255,0.18);
+}
+.tc_v5_footer a:hover { color: #fff; border-color: #fff; }

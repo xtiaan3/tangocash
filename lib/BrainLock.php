@@ -7,35 +7,115 @@
  * and BrainLock Verify (per-action authorization). Zero hard dependencies —
  * uses the curl + openssl extensions that ship with PHP.
  *
+ * # How BrainLock works with your site
+ *
+ * BrainLock is NOT a live dependency for your site. Every exchange across
+ * the boundary is a one-shot handoff at a ceremony moment; outside those
+ * moments your site runs without touching BrainLock. The SDK reflects
+ * that — the entire call surface is:
+ *
+ *   - configure()             — once at boot
+ *   - connect()               — kicks off Connect (redirect)
+ *   - verifyConnectToken()    — validates the Connect callback JWT
+ *   - verifyAction()          — kicks off Verify (redirect)
+ *   - verifyActionToken()     — validates the Verify callback JWT
+ *
+ * There is deliberately NO method to pull your own app's brand assets,
+ * NO method to refresh user identity, NO "sync from BrainLock" helper.
+ *
+ *   - Your app's logo/icon: uploaded in the dev portal to render BrainLock's
+ *     consent chrome during a ceremony. Your site hosts its OWN copy of
+ *     the same files for its own chrome. Same file lives in two places by
+ *     design. If BrainLock is down, your site stays branded.
+ *   - User identity: handed off once at Connect, your app owns the copy.
+ *     The user changes their display name in your app, never in BrainLock.
+ *   - User avatar specifically: 1h presigned URL in the JWT, download
+ *     once, host locally. See docs/AVATAR_HANDOFF.md.
+ *
+ * If you find yourself reaching for a "refresh from BrainLock" pattern in
+ * your render path, you've drifted into the OAuth-with-sync mental model —
+ * that's not how BrainLock works.
+ *
  * Canonical 8-line example:
  *
  *     require 'BrainLock.php';
  *
  *     BrainLock::configure([
- *         'api_key'      => $_ENV['BRAINLOCK_API_KEY'],
- *         'callback_url' => 'https://yourapp.com/auth/callback',
+ *         'api_key' => $_ENV['BRAINLOCK_API_KEY'],
  *     ]);
  *
  *     BrainLock::connect(['user_id' => session_id()]);
  *
  * And the callback:
  *
- *     $identity = BrainLock::verify($_GET['token']);
- *     // ['sub' => '...', 'name' => '...', 'email' => '...', 'picture' => '...']
+ *     $identity = BrainLock::verifyConnectToken($_GET['token']);
+ *     // ['sub' => '...', 'first_name' => '...', 'last_name' => '...',
+ *     //  'email' => '...', 'picture' => '...']
+ *
+ * On signature failure / expired token / malformed JWT, verifyConnectToken()
+ * throws BrainLockException. On a structurally valid token whose user
+ * simply failed the ceremony, it returns normally with verified: false.
  *
  * Connect always returns the same fixed identity bundle:
- *   - `sub`     stable user ID for your app   (always)
- *   - `name`    first + last                  (always)
- *   - `email`   primary email                 (always)
- *   - `picture` avatar URL                    (only when the user has set one)
+ *   - `sub`        BL user id for this app   (always — NOT permanent, can rotate)
+ *   - `first_name` given name                (always)
+ *   - `last_name`  family name               (always)
+ *   - `email`      primary email             (always)
+ *   - `picture`    avatar URL                (only when the user has set one)
  *
- * No scopes. No checkboxes. The bundle is the bundle.
+ * First and last are returned as SEPARATE fields so the partner can
+ * render either alone or concatenate as they wish. No scopes. No
+ * checkboxes. The bundle is the bundle.
+ *
+ * BrainLock Verify (per-action approval — e.g. "approve this $5,000 transfer"):
+ *
+ *     // On the action trigger (e.g. user clicks Send):
+ *     BrainLock::verifyAction([
+ *         'user_id'        => $currentUser->id,
+ *         'action'         => 'transfer_funds',
+ *         'security_level' => 'elevated',
+ *         'context' => [
+ *             // Consent panel content — what the user reads before tapping AUTHORIZE.
+ *             // All three keys optional; empty-string == missing → defaults apply.
+ *             // Full contract + philosophy: brainlock.id/developer/docs/api-v1#consent-panel
+ *             'title'       => 'Send $5,000.00',
+ *             'description' => "You're sending money to Tim Apple via TangoCash.",
+ *             'display'     => [
+ *                 ['label' => 'Amount',    'value' => '$5,000.00'],
+ *                 ['label' => 'Recipient', 'value' => 'tim.apple@example.com'],
+ *             ],
+ *             // Receipt-only — passes through to the JWT, no UI effect.
+ *             'amount_cents' => 500000,
+ *             'recipient'    => 'tim.apple@example.com',
+ *         ],
+ *     ]);
+ *
+ *     // On the callback (every context key echoes back unchanged):
+ *     $receipt = BrainLock::verifyActionToken($_GET['token']);
+ *     // ['sub' => '...', 'action' => 'transfer_funds',
+ *     //  'context' => ['title' => 'Send $5,000.00', 'description' => '...',
+ *     //                'display' => [...], 'amount_cents' => 500000, ...],
+ *     //  'verified' => true, 'verification_id' => 'verif_...']
+ *
+ * Verify is always a top-level redirect — no iframe / popup transport.
  *
  * Source: github.com/xtiaan3/brainlock-php
  */
+/**
+ * BrainLockException — thrown by every SDK method on signature failure,
+ * expired tokens, malformed JWTs, missing config, network errors, etc.
+ *
+ * A token that is structurally valid but whose user failed the ceremony
+ * does NOT throw — it returns normally with verified: false. Catch this
+ * exception only for "the token / SDK call itself is broken" cases.
+ */
+class BrainLockException extends \RuntimeException
+{
+}
+
 final class BrainLock
 {
-    public const VERSION = '0.4.0';
+    public const VERSION = '0.5.0';
 
     /** Default origin of the BrainLock service. */
     private const DEFAULT_API_BASE = 'https://brainlock.id';
@@ -58,15 +138,20 @@ final class BrainLock
      * Configure the SDK. Call once per request, before connect() or verify().
      *
      * Required:
-     *   api_key      — your developer API key (bl_live_… or bl_test_…)
-     *   callback_url — the URL on YOUR app where BrainLock will redirect after
-     *                  a successful sign-in. Must be HTTPS and pre-registered
-     *                  at brainlock.id/developer.
+     *   api_key  — your developer API key (bl_live_… or bl_test_…)
      *
      * Optional:
-     *   api_base     — defaults to https://brainlock.id. Override for testing.
-     *   mode         — 'popup' (default) or 'redirect'. See connect() for the
-     *                  difference.
+     *   api_base — defaults to https://brainlock.id. Override for testing.
+     *   mode     — 'redirect' (default) or 'iframe'. Verify is always
+     *              redirect regardless of this setting. See connect()
+     *              for the Connect-side difference.
+     *
+     * Note: callback_url used to live here. It no longer does — the
+     * URL is registered ONCE at brainlock.id/developer and looked up
+     * server-side per session-create call via the API key. Keeping
+     * it in application config invited drift (typos, dev/prod
+     * mismatches, stale values across deploys). One source of truth
+     * now: the developer portal.
      *
      * @throws InvalidArgumentException on bad config.
      */
@@ -77,16 +162,6 @@ final class BrainLock
         }
         if (!\preg_match('/^bl_(live|test)_[a-f0-9]+$/', $config['api_key'])) {
             throw new \InvalidArgumentException('BrainLock: api_key must look like "bl_live_…" or "bl_test_…".');
-        }
-        if (empty($config['callback_url']) || !\is_string($config['callback_url'])) {
-            throw new \InvalidArgumentException('BrainLock: callback_url is required.');
-        }
-        $parsed = \parse_url($config['callback_url']);
-        if (!$parsed || empty($parsed['scheme']) || empty($parsed['host'])) {
-            throw new \InvalidArgumentException('BrainLock: callback_url is not a valid URL.');
-        }
-        if ($parsed['scheme'] !== 'https' && $parsed['host'] !== 'localhost') {
-            throw new \InvalidArgumentException('BrainLock: callback_url must be https:// (or http://localhost for development).');
         }
 
         // Transport mode.
@@ -121,11 +196,10 @@ final class BrainLock
         }
 
         self::$config = [
-            'api_key'      => $config['api_key'],
-            'callback_url' => $config['callback_url'],
-            'api_base'     => \rtrim($config['api_base'] ?? self::DEFAULT_API_BASE, '/'),
-            'mode'         => $mode,
-            'embed_path'   => $embedPath,
+            'api_key'    => $config['api_key'],
+            'api_base'   => \rtrim($config['api_base'] ?? self::DEFAULT_API_BASE, '/'),
+            'mode'       => $mode,
+            'embed_path' => $embedPath,
         ];
     }
 
@@ -309,24 +383,11 @@ final class BrainLock
 
 
     /**
-     * Start an auth session and RETURN the URL data without emitting any
-     * output. Use this when you want to drive the popup from your own
-     * client-side JS (which is the only way to reliably avoid popup
-     * blockers — `window.open` must run during the click event).
-     *
-     * Returns: ['url' => '<brainlock.id/auth/SID>',
-     *           'session_id' => 'bl_sess_...',
-     *           'expires_at' => '2026-...']
-     *
-     * Use with the bundled `brainlock-connect.js` (or your own JS) like:
-     *
-     *     // Server side — return JSON to your sign-in button's fetch:
-     *     header('Content-Type: application/json');
-     *     echo json_encode(BrainLock::startSession(['user_id' => session_id()]));
-     *
-     *     // Client side — popup at click time, swap location after fetch.
-     *
-     * @throws RuntimeException on API error.
+     * @internal Lower-level session-create helper retained for the same-origin
+     * iframe transport (see {@see emitIframeOpener()}). Not part of the
+     * public SDK surface and not covered by SemVer; signature and return
+     * shape may change between minor versions. Use {@see connect()} or
+     * {@see verifyAction()} from partner code.
      */
     public static function startSession(array $opts = []): array
     {
@@ -345,7 +406,6 @@ final class BrainLock
             self::$config['api_base'] . '/v1/auth/session',
             [
                 'user_id'        => $opts['user_id'],
-                'callback_url'   => self::$config['callback_url'],
                 'security_level' => $level,
                 'state'          => $state,
                 'require_geo'    => !empty($opts['require_geo']),
@@ -394,20 +454,24 @@ final class BrainLock
      * Optional:
      *   security_level — 'secure' (default) | 'elevated' | 'maximum'
      *   state          — opaque CSRF/round-trip string. Auto-generated when omitted.
-     *   profile_attrs  — vestigial; ignored. Bundle is fixed (name+email+picture).
      *
-     * Side effects (popup mode, default):
-     *   Outputs a small HTML+JS page that opens the BrainLock popup, listens
-     *   for the postMessage with the JWT, and forwards the user to your
-     *   callback URL on success. The page is the entirety of the HTTP
-     *   response — call this from a dedicated handler like /signin.php.
+     * Side effects (redirect mode, default):
+     *   Sends a 302 to brainlock.id/auth/<sid>. The user leaves your domain
+     *   for the ceremony; BrainLock redirects them back to the callback URL
+     *   registered on your app (see brainlock.id/developer) with the result
+     *   in the query string.
      *
-     * Side effects (redirect mode):
-     *   Sends a 302 to brainlock.id/auth/<sid>. Simpler, but the user leaves
-     *   your domain during the ceremony.
+     * Side effects (iframe mode):
+     *   Emits a launcher page that runs a capability check and either opens
+     *   the BrainLock auth UI inside a same-origin iframe (modern browsers
+     *   with partitioned-cookies / CHIPS support) or falls back to a full-
+     *   page redirect. The page is the entirety of the HTTP response — call
+     *   from a dedicated handler.
      *
-     * Both modes set a `brainlock_state` cookie containing the state value,
-     * which verify() checks to defeat callback-URL replay.
+     * Both modes set a `brainlock_state` cookie containing the state value.
+     * It's available for your own callback handler to read and compare
+     * against ?state= for CSRF defense; the SDK itself just clears it after
+     * a successful verify and does NOT enforce a comparison.
      */
     public static function connect(array $opts = []): void
     {
@@ -428,7 +492,6 @@ final class BrainLock
             self::$config['api_base'] . '/v1/auth/session',
             [
                 'user_id'        => $opts['user_id'],
-                'callback_url'   => self::$config['callback_url'],
                 'security_level' => $level,
                 'state'          => $state,
                 'require_geo'    => !empty($opts['require_geo']),
@@ -467,14 +530,17 @@ final class BrainLock
     /**
      * Verify a JWT received on the callback URL.
      *
-     * Throws \RuntimeException on any failure (bad signature, wrong audience,
-     * expired, state mismatch, etc.). Returns the decoded identity claims
-     * on success:
+     * Throws BrainLockException on any failure (bad signature, malformed
+     * token, expired, or intent mismatch — the SDK rejects Verify tokens
+     * here). Note: the SDK does NOT currently validate the `aud` claim or
+     * the state cookie; if you need those defenses, layer them at your
+     * callback handler. Returns the decoded identity claims on success:
      *
      *   [
-     *     'sub'     => '<stable user id for this app>',
-     *     'name'    => 'Jane Doe',
-     *     'email'   => 'jane@example.com',
+     *     'sub'        => '<stable user id for this app>',
+     *     'first_name' => 'Tim',
+     *     'last_name'  => 'Apple',
+     *     'email'      => 'tim.apple@example.com',
      *     'picture' => 'https://…/avatar.jpg',  // omitted when not set
      *     'verified'      => true,
      *     'biometric_used' => true|false,
@@ -483,68 +549,9 @@ final class BrainLock
      *     'exp'           => 1779971577,
      *   ]
      */
-    public static function verify(string $token): array
+    public static function verifyConnectToken(string $token): array
     {
-        self::ensureConfigured();
-        if ($token === '') {
-            throw new \RuntimeException('BrainLock::verify: empty token.');
-        }
-
-        // Decode the three JWT segments.
-        $parts = \explode('.', $token);
-        if (\count($parts) !== 3) {
-            throw new \RuntimeException('BrainLock::verify: malformed token.');
-        }
-        [$rawHeader, $rawPayload, $rawSig] = $parts;
-        $header  = self::jsonDecodeSegment($rawHeader);
-        $payload = self::jsonDecodeSegment($rawPayload);
-        $sig     = self::base64UrlDecode($rawSig);
-
-        // Algorithm guard. The BrainLock JWKS only signs RS256.
-        if (($header['alg'] ?? '') !== 'RS256') {
-            throw new \RuntimeException('BrainLock::verify: unexpected alg "' . ($header['alg'] ?? '') . '".');
-        }
-        $kid = $header['kid'] ?? '';
-        if ($kid === '') {
-            throw new \RuntimeException('BrainLock::verify: token missing kid.');
-        }
-
-        // Resolve the kid against the JWKS.
-        $publicKey = self::publicKeyFor($kid);
-
-        // Verify the RSA-SHA256 signature over header.payload (raw bytes).
-        $signed = $rawHeader . '.' . $rawPayload;
-        $verifyResult = \openssl_verify($signed, $sig, $publicKey, OPENSSL_ALGO_SHA256);
-        if ($verifyResult !== 1) {
-            throw new \RuntimeException('BrainLock::verify: signature mismatch.');
-        }
-
-        // Standard claim checks.
-        $now = \time();
-        if (!isset($payload['exp']) || $payload['exp'] < $now) {
-            throw new \RuntimeException('BrainLock::verify: token expired.');
-        }
-        if (isset($payload['nbf']) && $payload['nbf'] > $now + 10) {
-            throw new \RuntimeException('BrainLock::verify: token not yet valid.');
-        }
-        // Audience must match this app — pulled from the api_key's first
-        // /v1/auth/session call's response on the BrainLock side; we trust
-        // that the token's aud belongs to whichever app this key is bound
-        // to. (Hard cross-check would require a getApp endpoint; the
-        // env-mismatch + signature checks make this safe.)
-
-        // State-cookie cross-check. The popup-mode flow set a state cookie
-        // when connect() ran; the JWT's session_id is opaque, but we can at
-        // least defeat naive replay by clearing the cookie now.
-        if (isset($_COOKIE[self::STATE_COOKIE])) {
-            \setcookie(self::STATE_COOKIE, '', [
-                'expires'  => 1,
-                'path'     => '/',
-                'secure'   => true,
-                'httponly' => true,
-                'samesite' => 'Lax',
-            ]);
-        }
+        $payload = self::verifyTokenCommon($token, 'connect', 'verifyConnectToken');
 
         // Flatten the identity bundle. The signed payload puts the bundle
         // under "profile"; we hoist its keys to the top level so callers
@@ -557,13 +564,269 @@ final class BrainLock
             'iat'            => $payload['iat'] ?? null,
             'exp'            => $payload['exp'] ?? null,
         ];
+        // Verification id (top-level claim, NOT under profile) — the
+        // audit-log cross-reference key. Always populated on a success
+        // resolution; absent only on the rare audit-persist failure.
+        if (!empty($payload['verification_id'])) {
+            $identity['verification_id'] = $payload['verification_id'];
+        }
         $profile = $payload['profile'] ?? [];
-        foreach (['name', 'email', 'picture'] as $k) {
+        foreach (['first_name', 'last_name', 'email', 'picture'] as $k) {
             if (!empty($profile[$k])) {
                 $identity[$k] = $profile[$k];
             }
         }
         return $identity;
+    }
+
+    /**
+     * Kick off a BrainLock Verify (per-action) ceremony.
+     *
+     * Required:
+     *   user_id  — same identifier you'd pass to connect() / startSession();
+     *              must already be bound to a BrainLock vault (you can't
+     *              Verify a user who hasn't Connected first).
+     *   action   — partner-supplied action key, e.g. 'transfer_funds',
+     *              'change_password', 'reveal_seed_phrase'. ≤ 64 chars.
+     *              Echoed back in the verified JWT so your callback can
+     *              prove the user authorized THIS action, not a different
+     *              one that hit the same code path.
+     *
+     * Optional:
+     *   context        — JSON-serializable payload describing what's being
+     *                    approved. Encrypted at rest on the BrainLock side,
+     *                    echoed back unchanged in the JWT. Max 10KB after
+     *                    serialization.
+     *
+     *                    THREE KEYS ARE RECOGNIZED BY THE CONSENT UI (all
+     *                    optional). Treat these as user-facing copy — they
+     *                    are what the user reads on BrainLock's consent
+     *                    panel before tapping AUTHORIZE:
+     *
+     *                      'title'       — short headline. Missing/empty
+     *                                      → "BrainLock Verify"
+     *                      'description' — one-sentence body. Missing/empty
+     *                                      → "You're verifying an action with <AppName>."
+     *                      'display'     — array of ['label' => …, 'value' => …]
+     *                                      rows the user should eyeball
+     *                                      (amount, recipient, destination).
+     *                                      No fallback; if you don't send
+     *                                      rows, none render. Sweet spot:
+     *                                      1–3 rows. 5+ usually means you
+     *                                      should summarize in 'description'.
+     *
+     *                    Any other keys (amount_cents, recipient, your own
+     *                    routing metadata) pass through verbatim to the
+     *                    JWT receipt — for your downstream code, not the
+     *                    consent UI.
+     *
+     *                    Full philosophy + worked examples:
+     *                    https://brainlock.id/developer/docs/api-v1#consent-panel
+     *   security_level — 'secure' (default) | 'elevated' | 'maximum'.
+     *                    Default to 'secure' for routine confirmations;
+     *                    'maximum' for genuinely irreversible actions.
+     *   require_geo    — force at least one geographic challenge.
+     *   state          — opaque CSRF/round-trip string.
+     *
+     * Side effects: top-level redirect (302) to the BrainLock auth landing.
+     * Unlike connect(), Verify is ALWAYS redirect — no iframe / popup. A
+     * per-action approval should never be silently embedded inside the
+     * partner UI; the user is committing to something irreversible and
+     * deserves the full handoff.
+     */
+    public static function verifyAction(array $opts = []): void
+    {
+        self::ensureConfigured();
+
+        if (empty($opts['user_id']) || !\is_string($opts['user_id'])) {
+            throw new \InvalidArgumentException('BrainLock::verifyAction requires user_id.');
+        }
+        if (empty($opts['action']) || !\is_string($opts['action'])) {
+            throw new \InvalidArgumentException('BrainLock::verifyAction requires action.');
+        }
+        if (\strlen($opts['action']) > 64) {
+            throw new \InvalidArgumentException('BrainLock::verifyAction: action must be 64 characters or less.');
+        }
+        $state = $opts['state'] ?? \bin2hex(\random_bytes(16));
+        $level = $opts['security_level'] ?? 'secure';
+        if (!\in_array($level, ['secure', 'elevated', 'maximum'], true)) {
+            throw new \InvalidArgumentException("BrainLock::verifyAction security_level must be 'secure', 'elevated', or 'maximum'.");
+        }
+        $context = $opts['context'] ?? null;
+        if ($context !== null && !\is_array($context)) {
+            throw new \InvalidArgumentException('BrainLock::verifyAction context must be an associative array.');
+        }
+
+        $payload = [
+            'user_id'        => $opts['user_id'],
+            'intent'         => 'verify',
+            'action'         => $opts['action'],
+            'security_level' => $level,
+            'state'          => $state,
+            'require_geo'    => !empty($opts['require_geo']),
+        ];
+        if ($context !== null) {
+            $payload['context'] = $context;
+        }
+
+        $resp = self::http(
+            'POST',
+            self::$config['api_base'] . '/v1/auth/session',
+            $payload,
+            ['Authorization: Bearer ' . self::$config['api_key']]
+        );
+        if (empty($resp['redirect_url']) || empty($resp['session_id'])) {
+            $msg = isset($resp['error']['message']) ? $resp['error']['message'] : 'unknown error';
+            throw new \RuntimeException('BrainLock: failed to create verify session: ' . $msg);
+        }
+
+        \setcookie(self::STATE_COOKIE, $state, [
+            'expires'  => \time() + 600,
+            'path'     => '/',
+            'secure'   => true,
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ]);
+
+        // Always redirect — Verify ignores the global mode config.
+        // See memory:project_verify_redirect_only for the rationale.
+        \header('Location: ' . $resp['redirect_url']);
+        exit;
+    }
+
+    /**
+     * Verify a JWT returned from a Verify (per-action) callback.
+     *
+     * Throws BrainLockException on any failure (bad signature, expired,
+     * intent mismatch, etc.). Returns the action receipt on success:
+     *
+     *   [
+     *     'sub'             => '<your user_id>',
+     *     'session_id'      => '<bl_sess_…>',
+     *     'verification_id' => '<verif_…>',           // audit-log id
+     *     'verified'        => true,
+     *     'biometric_used'  => true|false,
+     *     'action'          => 'transfer_funds',      // echo of what you sent
+     *     'context'         => [...],                 // echo of what you sent
+     *     'iat'             => 1779971517,
+     *     'exp'             => 1779971577,
+     *   ]
+     *
+     * No identity-bundle fields (no first_name/last_name/email/picture) —
+     * Verify is per-action approval, not identity exchange. You already
+     * know who the user is when you call verifyAction(); the receipt
+     * proves they approved this specific action right now.
+     */
+    public static function verifyActionToken(string $token): array
+    {
+        $payload = self::verifyTokenCommon($token, 'verify', 'verifyActionToken');
+
+        $receipt = [
+            'sub'            => $payload['sub']        ?? '',
+            'session_id'     => $payload['session_id'] ?? '',
+            'verified'       => !empty($payload['verified']),
+            'biometric_used' => !empty($payload['biometric_used']),
+            'iat'            => $payload['iat'] ?? null,
+            'exp'            => $payload['exp'] ?? null,
+            'action'         => $payload['action'] ?? '',
+        ];
+        if (!empty($payload['verification_id'])) {
+            $receipt['verification_id'] = $payload['verification_id'];
+        }
+        if (isset($payload['context']) && \is_array($payload['context'])) {
+            $receipt['context'] = $payload['context'];
+        }
+        return $receipt;
+    }
+
+    /**
+     * Shared JWT verification — signature, algorithm, expiry, intent.
+     * Returns the decoded payload on success. Throws BrainLockException
+     * on any failure. The caller is responsible for hoisting whichever
+     * payload claims it cares about into the public return shape.
+     *
+     * $expectIntent — '' to accept any intent; 'connect' or 'verify' to
+     * enforce. Tokens are required to carry an `intent` claim — a missing
+     * claim throws BrainLockException.
+     */
+    private static function verifyTokenCommon(string $token, string $expectIntent, string $callerName): array
+    {
+        self::ensureConfigured();
+        if ($token === '') {
+            throw new \BrainLockException("BrainLock::{$callerName}: empty token.");
+        }
+
+        // Decode the three JWT segments.
+        $parts = \explode('.', $token);
+        if (\count($parts) !== 3) {
+            throw new \BrainLockException("BrainLock::{$callerName}: malformed token.");
+        }
+        [$rawHeader, $rawPayload, $rawSig] = $parts;
+        $header  = self::jsonDecodeSegment($rawHeader);
+        $payload = self::jsonDecodeSegment($rawPayload);
+        $sig     = self::base64UrlDecode($rawSig);
+
+        // Algorithm guard. The BrainLock JWKS only signs RS256.
+        if (($header['alg'] ?? '') !== 'RS256') {
+            throw new \BrainLockException("BrainLock::{$callerName}: unexpected alg \"" . ($header['alg'] ?? '') . "\".");
+        }
+        $kid = $header['kid'] ?? '';
+        if ($kid === '') {
+            throw new \BrainLockException("BrainLock::{$callerName}: token missing kid.");
+        }
+
+        // Resolve the kid against the JWKS.
+        $publicKey = self::publicKeyFor($kid);
+
+        // Verify the RSA-SHA256 signature over header.payload (raw bytes).
+        $signed = $rawHeader . '.' . $rawPayload;
+        $verifyResult = \openssl_verify($signed, $sig, $publicKey, OPENSSL_ALGO_SHA256);
+        if ($verifyResult !== 1) {
+            throw new \BrainLockException("BrainLock::{$callerName}: signature mismatch.");
+        }
+
+        // Standard claim checks.
+        $now = \time();
+        if (!isset($payload['exp']) || $payload['exp'] < $now) {
+            throw new \BrainLockException("BrainLock::{$callerName}: token expired.");
+        }
+        if (isset($payload['nbf']) && $payload['nbf'] > $now + 10) {
+            throw new \BrainLockException("BrainLock::{$callerName}: token not yet valid.");
+        }
+
+        // Intent enforcement. Crucial: prevents a Connect-issued JWT from
+        // being accepted by verifyActionToken (and vice versa). A missing
+        // intent claim is a token-shape failure — every BrainLock-minted
+        // token carries one.
+        if ($expectIntent !== '') {
+            if (empty($payload['intent']) || !\is_string($payload['intent'])) {
+                throw new \BrainLockException(
+                    "BrainLock::{$callerName}: token is missing the 'intent' claim."
+                );
+            }
+            $gotIntent = $payload['intent'];
+            if ($gotIntent !== $expectIntent) {
+                throw new \BrainLockException(
+                    "BrainLock::{$callerName}: token intent is '{$gotIntent}', expected '{$expectIntent}'. " .
+                    "You may be calling the wrong verify* method for this token."
+                );
+            }
+        }
+
+        // State-cookie cross-check. Both connect() and verifyAction() set
+        // the state cookie; the JWT's session_id is opaque, but we can at
+        // least defeat naive replay by clearing the cookie now.
+        if (isset($_COOKIE[self::STATE_COOKIE])) {
+            \setcookie(self::STATE_COOKIE, '', [
+                'expires'  => 1,
+                'path'     => '/',
+                'secure'   => true,
+                'httponly' => true,
+                'samesite' => 'Lax',
+            ]);
+        }
+
+        return $payload;
     }
 
     // -------------------------------------------------------------------------
@@ -678,17 +941,17 @@ HTML;
             }
         }
         if ($jwk === null) {
-            throw new \RuntimeException('BrainLock::verify: kid "' . $kid . '" not in JWKS.');
+            throw new \BrainLockException('BrainLock JWKS: kid "' . $kid . '" not in JWKS.');
         }
         if (($jwk['kty'] ?? '') !== 'RSA') {
-            throw new \RuntimeException('BrainLock::verify: unexpected key type for kid.');
+            throw new \BrainLockException('BrainLock JWKS: unexpected key type for kid.');
         }
         $n = self::base64UrlDecode($jwk['n']);
         $e = self::base64UrlDecode($jwk['e']);
         $pem = self::rsaJwkToPem($n, $e);
         $key = \openssl_pkey_get_public($pem);
         if ($key === false) {
-            throw new \RuntimeException('BrainLock::verify: could not import public key.');
+            throw new \BrainLockException('BrainLock JWKS: could not import public key.');
         }
         return $key;
     }
@@ -702,7 +965,7 @@ HTML;
         $url = self::$config['api_base'] . '/v1/.well-known/jwks.json';
         $resp = self::http('GET', $url, null, []);
         if (empty($resp['keys']) || !\is_array($resp['keys'])) {
-            throw new \RuntimeException('BrainLock::verify: JWKS endpoint returned no keys.');
+            throw new \BrainLockException('BrainLock JWKS: endpoint returned no keys.');
         }
         self::$jwksCache = $resp['keys'];
         self::$jwksCachedAt = \time();
@@ -762,7 +1025,7 @@ HTML;
         $json = self::base64UrlDecode($segment);
         $data = \json_decode($json, true);
         if (!\is_array($data)) {
-            throw new \RuntimeException('BrainLock::verify: could not JSON-decode token segment.');
+            throw new \BrainLockException('BrainLock: could not JSON-decode token segment.');
         }
         return $data;
     }
@@ -774,7 +1037,12 @@ HTML;
         if ($pad) $s .= \str_repeat('=', 4 - $pad);
         $out = \base64_decode($s, true);
         if ($out === false) {
-            throw new \RuntimeException('BrainLock: base64url decode failed.');
+            // Throws BrainLockException (not RuntimeException) so callers
+            // wrapping verifyConnectToken/verifyActionToken in a single
+            // BrainLockException catch don't have to special-case decode
+            // failures. The SDK's public promise is: every token-parse
+            // path throws BrainLockException on failure.
+            throw new \BrainLockException('BrainLock: base64url decode failed.');
         }
         return $out;
     }

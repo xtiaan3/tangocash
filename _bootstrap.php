@@ -26,11 +26,59 @@ require_once __DIR__ . '/lib/BrainLock.php';
 require_once __DIR__ . '/_avatars.php';
 
 \BrainLock::configure([
-    'api_key'      => \getenv('BRAINLOCK_API_KEY')      ?: ($_ENV['BRAINLOCK_API_KEY']      ?? ''),
-    'callback_url' => \getenv('BRAINLOCK_CALLBACK_URL') ?: ($_ENV['BRAINLOCK_CALLBACK_URL'] ?? ''),
-    'api_base'     => \getenv('BRAINLOCK_API_BASE')     ?: ($_ENV['BRAINLOCK_API_BASE']     ?? 'https://brainlock.id'),
-    'mode'         => 'redirect',
+    'api_key'  => \getenv('BRAINLOCK_API_KEY')  ?: ($_ENV['BRAINLOCK_API_KEY']  ?? ''),
+    'api_base' => \getenv('BRAINLOCK_API_BASE') ?: ($_ENV['BRAINLOCK_API_BASE'] ?? 'https://brainlock.id'),
+    'mode'     => 'redirect',
 ]);
+// callback_url used to live here — retired 2026-07-03. BrainLock now
+// looks up the app's registered callback server-side via the API key.
+// One source of truth: brainlock.id/developer.
+
+// Disconnect-webhook enforcement. When BrainLock fires /auth/disconnect
+// for a user it sets tc_users.force_signout_at to NOW(). Every request
+// from a signed-in session checks whether that timestamp is newer than
+// the moment THIS session was issued at (bl_signed_in_at); if so, the
+// session is forcibly destroyed and the user is dropped on the
+// signed-out homepage. Effect: a Remove on brainlock.id/connections
+// kicks the user out of TangoCash on EVERY device, not just the
+// browser they clicked Remove from.
+//
+// Cheap check: one indexed lookup keyed by bl_sub. Skipped for visitors
+// who aren't signed in and for the webhook handler itself (which sets
+// the flag and would otherwise loop on it).
+if (!empty($_SESSION['bl_user']['sub'])
+    && (($_SERVER['SCRIPT_NAME'] ?? '') !== '/auth/disconnect.php')) {
+    try {
+        // Pull as a unix timestamp so we sidestep any PHP-vs-MySQL
+        // timezone interpretation entirely. Both sides of the
+        // comparison are then unix-seconds from PHP's perspective.
+        $stmt = \tc_db()->prepare('SELECT UNIX_TIMESTAMP(force_signout_at) AS force_unix FROM tc_users WHERE bl_sub = ? LIMIT 1');
+        $stmt->execute([$_SESSION['bl_user']['sub']]);
+        $row = $stmt->fetch();
+        if ($row && !empty($row['force_unix'])) {
+            $forceAt   = (int) $row['force_unix'];
+            $signedAt  = (int) ($_SESSION['bl_signed_in_at'] ?? 0);
+            if ($forceAt > $signedAt) {
+                \tc_sign_out();
+                // Redirect to home so the next page render uses the
+                // signed-out chrome. Skipped for XHR/JSON requests so
+                // they get a clean 401 instead of an HTML body.
+                $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
+                if (\strpos($accept, 'application/json') !== false) {
+                    \http_response_code(401);
+                    \header('Content-Type: application/json');
+                    echo \json_encode(['error' => 'signed_out_remotely']);
+                } else {
+                    \header('Location: /?signed_out_remotely=1');
+                }
+                exit;
+            }
+        }
+    } catch (\Throwable $e) {
+        \error_log('[tangocash bootstrap] force_signout_at check failed: ' . $e->getMessage());
+        // Fail-open: a transient DB error shouldn't lock everyone out.
+    }
+}
 
 /**
  * Returns the currently signed-in user (BrainLock identity) or null.
