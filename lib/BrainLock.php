@@ -120,6 +120,14 @@ final class BrainLock
     /** Default origin of the BrainLock service. */
     private const DEFAULT_API_BASE = 'https://brainlock.id';
 
+    /**
+     * Expected JWT issuer. Every BrainLock-minted JWT stamps this in
+     * the `iss` claim; verifyTokenCommon rejects any token whose iss
+     * doesn't match. See internal/devjwt/devjwt.go `Issuer` on the
+     * backend — must stay in lockstep.
+     */
+    private const EXPECTED_ISS = 'https://api.brainlock.id';
+
     /** Cookie name used to bind a sign-in session to this browser. */
     private const STATE_COOKIE = 'brainlock_state';
 
@@ -139,6 +147,11 @@ final class BrainLock
      *
      * Required:
      *   api_key  — your developer API key (bl_live_… or bl_test_…)
+     *   app_id   — your developer app ID (a UUID). Shown next to the
+     *              API key on brainlock.id/developer. Required so the
+     *              SDK can validate the JWT `aud` claim on callback —
+     *              a token minted for someone else's app must not
+     *              verify for yours. (Added 2026-07-03 per audit H2.)
      *
      * Optional:
      *   api_base — defaults to https://brainlock.id. Override for testing.
@@ -162,6 +175,20 @@ final class BrainLock
         }
         if (!\preg_match('/^bl_(live|test)_[a-f0-9]+$/', $config['api_key'])) {
             throw new \InvalidArgumentException('BrainLock: api_key must look like "bl_live_…" or "bl_test_…".');
+        }
+        if (empty($config['app_id']) || !\is_string($config['app_id'])) {
+            throw new \InvalidArgumentException(
+                'BrainLock: app_id is required. Find it on brainlock.id/developer next to your API key. ' .
+                'Required so the SDK can validate the JWT audience on callback.'
+            );
+        }
+        // app_id is a UUID as shown on brainlock.id/developer. Accept
+        // any 32+ char [a-f0-9-] string; the strict shape check happens
+        // at aud-compare time against the token's audience claim.
+        if (!\preg_match('/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/', $config['app_id'])) {
+            throw new \InvalidArgumentException(
+                'BrainLock: app_id must be the UUID shown on brainlock.id/developer next to your app name.'
+            );
         }
 
         // Transport mode.
@@ -197,6 +224,7 @@ final class BrainLock
 
         self::$config = [
             'api_key'    => $config['api_key'],
+            'app_id'     => $config['app_id'],
             'api_base'   => \rtrim($config['api_base'] ?? self::DEFAULT_API_BASE, '/'),
             'mode'       => $mode,
             'embed_path' => $embedPath,
@@ -531,10 +559,9 @@ final class BrainLock
      * Verify a JWT received on the callback URL.
      *
      * Throws BrainLockException on any failure (bad signature, malformed
-     * token, expired, or intent mismatch — the SDK rejects Verify tokens
-     * here). Note: the SDK does NOT currently validate the `aud` claim or
-     * the state cookie; if you need those defenses, layer them at your
-     * callback handler. Returns the decoded identity claims on success:
+     * token, expired, wrong intent, wrong issuer, or audience mismatch —
+     * the SDK rejects Verify tokens here and cross-app-audience replays).
+     * Returns the decoded identity claims on success:
      *
      *   [
      *     'sub'        => '<stable user id for this app>',
@@ -792,6 +819,33 @@ final class BrainLock
         }
         if (isset($payload['nbf']) && $payload['nbf'] > $now + 10) {
             throw new \BrainLockException("BrainLock::{$callerName}: token not yet valid.");
+        }
+
+        // Issuer + audience (audit finding H2, 2026-07-03).
+        //
+        // iss — hardcoded: every BrainLock JWT is minted with iss set to
+        // the API origin. A token whose iss doesn't match is either
+        // forged, replayed from a different environment (unlikely — the
+        // JWKS wouldn't verify it), or a bug on our side. Fail closed.
+        //
+        // aud — the app_id the token was minted FOR. If a hostile app
+        // manages to trick a user into completing a BrainLock ceremony
+        // and lifts the resulting token, they must not be able to
+        // present it to a different partner's callback and have it
+        // accepted. aud enforcement blocks that cross-app replay.
+        $gotIss = $payload['iss'] ?? '';
+        if ($gotIss !== self::EXPECTED_ISS) {
+            throw new \BrainLockException(
+                "BrainLock::{$callerName}: token issuer mismatch (got \"{$gotIss}\", expected \"" . self::EXPECTED_ISS . "\")."
+            );
+        }
+        $expectedAud = self::$config['app_id'] ?? '';
+        $gotAud      = $payload['aud'] ?? '';
+        if ($expectedAud === '' || $gotAud !== $expectedAud) {
+            throw new \BrainLockException(
+                "BrainLock::{$callerName}: token audience mismatch (got \"{$gotAud}\", expected \"{$expectedAud}\"). " .
+                "Make sure the app_id passed to BrainLock::configure() matches the app you created on brainlock.id/developer."
+            );
         }
 
         // Intent enforcement. Crucial: prevents a Connect-issued JWT from

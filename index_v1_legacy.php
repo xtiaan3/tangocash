@@ -117,8 +117,8 @@ include __DIR__ . '/_header.php';
 require 'vendor/autoload.php';
 
 BrainLock::configure([
-    'api_key'      =&gt; $_ENV['BRAINLOCK_API_KEY'],
-    'callback_url' =&gt; 'https://yourapp.com/auth/callback',
+    'api_key' =&gt; $_ENV['BRAINLOCK_API_KEY'],
+    'app_id'  =&gt; $_ENV['BRAINLOCK_APP_ID'],
 ]);
 
 BrainLock::connect(['user_id' =&gt; session_id()]);</code></pre>

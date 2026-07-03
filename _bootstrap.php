@@ -27,6 +27,7 @@ require_once __DIR__ . '/_avatars.php';
 
 \BrainLock::configure([
     'api_key'  => \getenv('BRAINLOCK_API_KEY')  ?: ($_ENV['BRAINLOCK_API_KEY']  ?? ''),
+    'app_id'   => \getenv('BRAINLOCK_APP_ID')   ?: ($_ENV['BRAINLOCK_APP_ID']   ?? ''),
     'api_base' => \getenv('BRAINLOCK_API_BASE') ?: ($_ENV['BRAINLOCK_API_BASE'] ?? 'https://brainlock.id'),
     'mode'     => 'redirect',
 ]);
