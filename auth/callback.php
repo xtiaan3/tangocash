@@ -53,6 +53,69 @@ function tc_callback_retry_page(string $headline, string $body): void {
     exit;
 }
 
+/**
+ * tc_callback_error_copy — pick user-facing copy based on WHY the
+ * BrainLock SDK rejected the token. The SDK collapses everything into
+ * BrainLockException, so we pattern-match the message and branch. Real
+ * partners should copy this helper — the pre-2026-07-04 version showed
+ * "didn't pass our signature check" for EVERY failure, including plain
+ * "the token expired because the user let the tab sit for 20 minutes"
+ * (blaming the user's crypto for their own idle timeout is the exact
+ * anti-pattern our brief explicitly warns against).
+ *
+ * $ceremony is 'connect' or 'verify' — lets us tune the copy so a
+ * Verify failure doesn't sound like a Connect failure.
+ *
+ * @return array{0:string,1:string} [$headline, $body]
+ */
+function tc_callback_error_copy(\Throwable $e, string $ceremony): array {
+    $noun = ($ceremony === 'verify') ? 'authorization' : 'sign-in';
+    $msg  = $e->getMessage();
+
+    // Expired / not-yet-valid — the token clock ran out. Not the user's
+    // fault; not a signature problem. Ask them to redo the ceremony.
+    if (\str_contains($msg, 'expired') || \str_contains($msg, 'not yet valid')) {
+        return [
+            "Your {$noun} timed out",
+            "That took long enough that BrainLock retired the token. Please try again — it only takes a moment."
+        ];
+    }
+
+    // Audience / issuer / intent mismatch — configuration problem on
+    // OUR side (wrong app_id / wrong endpoint / wrong ceremony). Never
+    // frame as a user error.
+    if (\str_contains($msg, 'audience mismatch')
+        || \str_contains($msg, 'issuer mismatch')
+        || \str_contains($msg, "expected '")   // intent mismatch
+        || \str_contains($msg, 'missing the \'intent\'')
+    ) {
+        return [
+            "We couldn't accept your {$noun}",
+            "Something's off with our BrainLock setup. That's on us — please try again in a minute, and if it keeps happening, drop us a note."
+        ];
+    }
+
+    // JWKS / network / any RuntimeException from http() — BrainLock
+    // couldn't be reached or its keys couldn't be fetched. The user did
+    // nothing wrong; retry usually clears it.
+    if ($e instanceof \RuntimeException || \str_contains($msg, 'JWKS')) {
+        return [
+            "BrainLock is briefly unreachable",
+            "We couldn't reach BrainLock to finish your {$noun}. Please try again — it's usually cleared up in a minute."
+        ];
+    }
+
+    // Everything else (malformed / bad signature / missing kid) — the
+    // token itself looks tampered or malformed. Rare in practice; only
+    // real cases we've seen are the "back button after the flow already
+    // completed" replay, which is closer to expired than to a signature
+    // attack. Non-blaming default.
+    return [
+        "Your {$noun} didn't complete",
+        "Something went wrong finishing your {$noun}. Please try again — if it keeps happening, drop us a note."
+    ];
+}
+
 // ----- Non-success branches -----------------------------------------------
 
 // User intentionally cancelled — silent return home. Not an error.
@@ -126,10 +189,8 @@ if ($intent === 'verify') {
         $receipt = \BrainLock::verifyActionToken($token);
     } catch (\Throwable $e) {
         \error_log('[tangocash] BrainLock::verifyActionToken failed: ' . $e->getMessage());
-        tc_callback_retry_page(
-            "We couldn't verify your action",
-            "The Verify token from BrainLock didn't pass our signature check. Please try again."
-        );
+        [$headline, $body] = tc_callback_error_copy($e, 'verify');
+        tc_callback_retry_page($headline, $body);
     }
     // Verify ceremony complete — stash the full receipt in the PHP
     // session and route to the dedicated /receipt landing page. Works
@@ -163,10 +224,8 @@ try {
     $identity = \BrainLock::verifyConnectToken($token);
 } catch (\Throwable $e) {
     \error_log('[tangocash] BrainLock::verifyConnectToken failed: ' . $e->getMessage());
-    tc_callback_retry_page(
-        "We couldn't verify your sign-in",
-        "The token from BrainLock didn't pass our signature check. That's on us — please try again, and if it keeps happening, drop us a note."
-    );
+    [$headline, $body] = tc_callback_error_copy($e, 'connect');
+    tc_callback_retry_page($headline, $body);
 }
 
 if (empty($identity['sub'])) {

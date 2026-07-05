@@ -1126,12 +1126,17 @@ HTML;
         $code = (int)\curl_getinfo($ch, CURLINFO_HTTP_CODE);
         \curl_close($ch);
 
+        // JWKS/HTTP failures reach the verifyConnectToken/verifyActionToken
+        // callers via fetchJwks(). Partners wrap those in
+        // catch (BrainLockException) per the docstring — so this MUST
+        // surface as BrainLockException, not RuntimeException, or a
+        // JWKS outage escapes to a 500 (audit medium, 2026-07-04).
         if ($raw === false) {
-            throw new \RuntimeException('BrainLock: HTTP ' . $method . ' ' . $url . ' failed: ' . $err);
+            throw new \BrainLockException('BrainLock: HTTP ' . $method . ' ' . $url . ' failed: ' . $err);
         }
         $data = \json_decode($raw, true);
         if (!\is_array($data)) {
-            throw new \RuntimeException('BrainLock: ' . $method . ' ' . $url . ' returned non-JSON (HTTP ' . $code . '): ' . \substr($raw, 0, 200));
+            throw new \BrainLockException('BrainLock: ' . $method . ' ' . $url . ' returned non-JSON (HTTP ' . $code . '): ' . \substr($raw, 0, 200));
         }
         if ($code >= 400) {
             // Return the error body so callers (currently only connect())
