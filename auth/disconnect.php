@@ -53,36 +53,29 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
 
 $raw = \file_get_contents('php://input') ?: '';
 $sigHeader = $_SERVER['HTTP_X_BRAINLOCK_SIGNATURE'] ?? '';
-$tsHeader  = $_SERVER['HTTP_X_BRAINLOCK_TIMESTAMP'] ?? '';
 
-if ($raw === '' || $sigHeader === '' || $tsHeader === '') {
+if ($raw === '' || $sigHeader === '') {
     \http_response_code(400);
     echo \json_encode(['error' => 'missing_signature_or_body']);
     exit;
 }
 
-// Timestamp window. Reject if older than 5 minutes or more than 5
-// minutes in the future (clock skew tolerance, both directions).
-$ts = (int) $tsHeader;
-$skew = \abs(\time() - $ts);
-if ($ts <= 0 || $skew > 300) {
-    \http_response_code(400);
-    echo \json_encode(['error' => 'stale_or_skewed_timestamp']);
-    exit;
-}
-
-// HMAC verification. The signing key is this app's LIVE BrainLock
-// API key. We read it the same way _bootstrap.php does — getenv()
-// first (PHP-FPM exposes pool env[] entries here), falling back to
-// $_ENV for setups that populate it there. Constant-time compare on
-// the signature to avoid timing leaks on byte length.
+// HMAC verification runs FIRST — the signed body carries its own
+// timestamp inside the JSON, so we can't trust anything about the
+// message until the signature checks out. This ordering closes the
+// pre-2026-07-04 replay window where the skew check happened against
+// the unsigned X-BrainLock-Timestamp header, letting an attacker
+// replay a captured (body, sig) pair forever by refreshing the header.
+//
+// The signing key is this app's LIVE BrainLock API key. Read via
+// getenv() first (PHP-FPM exposes pool env[] entries there), falling
+// back to $_ENV for setups that populate it that way. Constant-time
+// compare on the signature.
 $apiKey = \getenv('BRAINLOCK_API_KEY');
 if ($apiKey === false || $apiKey === '') {
     $apiKey = (string) ($_ENV['BRAINLOCK_API_KEY'] ?? '');
 }
 if ($apiKey === '') {
-    // Server misconfigured. Surface as 500 — BrainLock should retry
-    // (or in the no-retry MVP, we'll just see this in our error log).
     \error_log('[tangocash disconnect] BRAINLOCK_API_KEY not set');
     \http_response_code(500);
     echo \json_encode(['error' => 'server_misconfigured']);
@@ -90,7 +83,7 @@ if ($apiKey === '') {
 }
 $expected = 'sha256=' . \hash_hmac('sha256', $raw, $apiKey);
 if (!\hash_equals($expected, $sigHeader)) {
-    \error_log('[tangocash disconnect] bad signature (expected=' . $expected . ' got=' . $sigHeader . ')');
+    \error_log('[tangocash disconnect] bad signature');
     \http_response_code(401);
     echo \json_encode(['error' => 'bad_signature']);
     exit;
@@ -100,6 +93,16 @@ $payload = \json_decode($raw, true);
 if (!\is_array($payload) || ($payload['event'] ?? '') !== 'user.disconnected') {
     \http_response_code(400);
     echo \json_encode(['error' => 'unrecognised_event']);
+    exit;
+}
+
+// Timestamp window — read from the SIGNED body, not the header. The
+// header is defense-in-depth only; ignore it once we've verified sig.
+$ts = isset($payload['timestamp']) ? (int) $payload['timestamp'] : 0;
+$skew = \abs(\time() - $ts);
+if ($ts <= 0 || $skew > 300) {
+    \http_response_code(400);
+    echo \json_encode(['error' => 'stale_or_skewed_timestamp']);
     exit;
 }
 $userID = \trim((string) ($payload['user_id'] ?? ''));
