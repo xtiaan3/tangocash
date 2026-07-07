@@ -95,6 +95,20 @@ function tc_callback_error_copy(\Throwable $e, string $ceremony): array {
         ];
     }
 
+    // State-cookie CSRF mismatch — the callback didn't match a ceremony
+    // started from THIS browser. Legitimately happens when a link is
+    // reused, opened in a different browser, or arrives after the session
+    // cookie was cleared; can also be a forged cross-site callback. NOT a
+    // BrainLock outage — must be caught before the RuntimeException branch
+    // below (BrainLockException extends RuntimeException) or it would be
+    // mislabelled "briefly unreachable".
+    if (\str_contains($msg, 'state check failed')) {
+        return [
+            "Let's start that {$noun} again",
+            "This link didn't match the {$noun} you started in this browser — that can happen if it was reopened or reused. Please start again from TangoCash."
+        ];
+    }
+
     // JWKS / network / any RuntimeException from http() — BrainLock
     // couldn't be reached or its keys couldn't be fetched. The user did
     // nothing wrong; retry usually clears it.
