@@ -238,7 +238,9 @@ if ($signinNotice === 'session_expired') {
 
 <span class="v">BrainLock</span>::<span class="k">configure</span>([<span class="s">'api_key'</span> =&gt; <span class="v">$_ENV</span>[<span class="s">'BRAINLOCK_API_KEY'</span>]]);
 
-<span class="v">BrainLock</span>::<span class="k">connect</span>([<span class="s">'user_id'</span> =&gt; <span class="k">session_id</span>()]);</pre>
+<span class="c">// A stable per-user ID you control — the SAME value every visit,</span>
+<span class="c">// so BrainLock keeps this person tied to their vault.</span>
+<span class="v">BrainLock</span>::<span class="k">connect</span>([<span class="s">'user_id'</span> =&gt; <span class="v">$yourUserId</span>]);</pre>
     </div>
 
     <?php
