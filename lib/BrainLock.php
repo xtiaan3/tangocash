@@ -222,12 +222,24 @@ final class BrainLock
             throw new \InvalidArgumentException('BrainLock: embed_path must look like "/_bl" — single path segment, no trailing slash.');
         }
 
+        // verify_state — when true (default), verifyConnectToken /
+        // verifyActionToken enforce the state-cookie CSRF cross-check on the
+        // callback: the ?state= returned by BrainLock must match the
+        // brainlock_state cookie set when the flow was started. Disable ONLY
+        // if you manage the state round-trip yourself (e.g. a native app that
+        // can't rely on the cookie) — you lose login-CSRF protection.
+        $verifyState = $config['verify_state'] ?? true;
+        if (!\is_bool($verifyState)) {
+            throw new \InvalidArgumentException('BrainLock: verify_state must be a boolean.');
+        }
+
         self::$config = [
-            'api_key'    => $config['api_key'],
-            'app_id'     => $config['app_id'],
-            'api_base'   => \rtrim($config['api_base'] ?? self::DEFAULT_API_BASE, '/'),
-            'mode'       => $mode,
-            'embed_path' => $embedPath,
+            'api_key'      => $config['api_key'],
+            'app_id'       => $config['app_id'],
+            'api_base'     => \rtrim($config['api_base'] ?? self::DEFAULT_API_BASE, '/'),
+            'mode'         => $mode,
+            'embed_path'   => $embedPath,
+            'verify_state' => $verifyState,
         ];
     }
 
@@ -497,9 +509,10 @@ final class BrainLock
      *   from a dedicated handler.
      *
      * Both modes set a `brainlock_state` cookie containing the state value.
-     * It's available for your own callback handler to read and compare
-     * against ?state= for CSRF defense; the SDK itself just clears it after
-     * a successful verify and does NOT enforce a comparison.
+     * On the callback, verifyConnectToken()/verifyActionToken() enforce that
+     * this cookie matches the ?state= BrainLock returns (login-CSRF defense),
+     * then clear it. Enabled by default; opt out with verify_state => false in
+     * configure() only if you round-trip state yourself.
      */
     public static function connect(array $opts = []): void
     {
@@ -576,9 +589,9 @@ final class BrainLock
      *     'exp'           => 1779971577,
      *   ]
      */
-    public static function verifyConnectToken(string $token): array
+    public static function verifyConnectToken(string $token, ?string $state = null): array
     {
-        $payload = self::verifyTokenCommon($token, 'connect', 'verifyConnectToken');
+        $payload = self::verifyTokenCommon($token, 'connect', 'verifyConnectToken', $state);
 
         // Flatten the identity bundle. The signed payload puts the bundle
         // under "profile"; we hoist its keys to the top level so callers
@@ -744,9 +757,9 @@ final class BrainLock
      * know who the user is when you call verifyAction(); the receipt
      * proves they approved this specific action right now.
      */
-    public static function verifyActionToken(string $token): array
+    public static function verifyActionToken(string $token, ?string $state = null): array
     {
-        $payload = self::verifyTokenCommon($token, 'verify', 'verifyActionToken');
+        $payload = self::verifyTokenCommon($token, 'verify', 'verifyActionToken', $state);
 
         $receipt = [
             'sub'            => $payload['sub']        ?? '',
@@ -776,7 +789,7 @@ final class BrainLock
      * enforce. Tokens are required to carry an `intent` claim — a missing
      * claim throws BrainLockException.
      */
-    private static function verifyTokenCommon(string $token, string $expectIntent, string $callerName): array
+    private static function verifyTokenCommon(string $token, string $expectIntent, string $callerName, ?string $returnedState = null): array
     {
         self::ensureConfigured();
         if ($token === '') {
@@ -867,10 +880,19 @@ final class BrainLock
             }
         }
 
-        // State-cookie cross-check. Both connect() and verifyAction() set
-        // the state cookie; the JWT's session_id is opaque, but we can at
-        // least defeat naive replay by clearing the cookie now.
-        if (isset($_COOKIE[self::STATE_COOKIE])) {
+        // State-cookie CSRF cross-check (login-CSRF defense).
+        //
+        // connect() / startSession() / verifyAction() each generate a random
+        // `state`, send it to BrainLock when creating the session AND bind it
+        // to a `brainlock_state` cookie in this browser. BrainLock round-trips
+        // it back to the callback as ?state=. On the callback the two MUST
+        // match: an attacker who runs their OWN ceremony and feeds the victim
+        // the resulting callback URL cannot forge the victim's cookie, so a
+        // token that wasn't produced by a flow THIS browser started is
+        // rejected. The cookie is single-use — cleared regardless of outcome.
+        $hadCookie = isset($_COOKIE[self::STATE_COOKIE]);
+        $expected  = $hadCookie ? (string) $_COOKIE[self::STATE_COOKIE] : '';
+        if ($hadCookie) {
             \setcookie(self::STATE_COOKIE, '', [
                 'expires'  => 1,
                 'path'     => '/',
@@ -878,6 +900,19 @@ final class BrainLock
                 'httponly' => true,
                 'samesite' => 'Lax',
             ]);
+            unset($_COOKIE[self::STATE_COOKIE]);
+        }
+        if (self::$config['verify_state'] ?? true) {
+            $returned = $returnedState ?? (isset($_GET['state']) ? (string) $_GET['state'] : '');
+            if ($expected === '' || $returned === '' || !\hash_equals($expected, $returned)) {
+                throw new \BrainLockException(
+                    "BrainLock::{$callerName}: state check failed — this callback does not match a sign-in " .
+                    "started from this browser. Usually the link was reused or opened in a different browser; " .
+                    "it can also indicate a cross-site request forgery attempt. Start the sign-in again. " .
+                    "(If you manage the state round-trip yourself, pass it as the \$state argument to " .
+                    "verify*Token(), or set verify_state => false in BrainLock::configure().)"
+                );
+            }
         }
 
         return $payload;
