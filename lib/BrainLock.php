@@ -889,20 +889,21 @@ final class BrainLock
         // match: an attacker who runs their OWN ceremony and feeds the victim
         // the resulting callback URL cannot forge the victim's cookie, so a
         // token that wasn't produced by a flow THIS browser started is
-        // rejected. The cookie is single-use — cleared regardless of outcome.
-        $hadCookie = isset($_COOKIE[self::STATE_COOKIE]);
-        $expected  = $hadCookie ? (string) $_COOKIE[self::STATE_COOKIE] : '';
-        if ($hadCookie) {
-            \setcookie(self::STATE_COOKIE, '', [
-                'expires'  => 1,
-                'path'     => '/',
-                'secure'   => true,
-                'httponly' => true,
-                'samesite' => 'Lax',
-            ]);
-            unset($_COOKIE[self::STATE_COOKIE]);
-        }
+        // rejected.
+        //
+        // IDEMPOTENT — DO NOT clear the cookie here. Partner callbacks are
+        // routinely hit MORE THAN ONCE per ceremony (browser/CDN speculative
+        // prefetch, HTTP/2 preload, reloads — we've observed 2–4 hits within
+        // one second from Cloudflare). Clearing the cookie as "single-use"
+        // made the 2nd+ hit throw a spurious "state check failed" once the
+        // deletion propagated — a race that surfaced as an intermittent
+        // "BrainLock is briefly unreachable" error on an otherwise-successful
+        // ceremony. The cookie is short-lived (10 min) and overwritten by the
+        // next connect()/verifyAction(), so leaving it in place costs no real
+        // security (the token itself is single-use via exp + our replay guard)
+        // and makes the check safe under repeat hits.
         if (self::$config['verify_state'] ?? true) {
+            $expected = isset($_COOKIE[self::STATE_COOKIE]) ? (string) $_COOKIE[self::STATE_COOKIE] : '';
             $returned = $returnedState ?? (isset($_GET['state']) ? (string) $_GET['state'] : '');
             if ($expected === '' || $returned === '' || !\hash_equals($expected, $returned)) {
                 throw new \BrainLockException(
