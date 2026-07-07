@@ -214,12 +214,11 @@ function tc_handle_for(array $userRow): string {
  *     where they're sender or recipient, and tc_contacts).
  *   - both bucket objects in tangocash-avatars (best-effort).
  *
- * Lookup precedence is email-first → bl_sub fallback. Why: bl_sub is the
- * JWT subject and rotates whenever the user resets cookies (the partner
- * developer_user_id changes), but email is stable. After migration 0002
- * the canonical key is email; bl_sub is now just a stored attribute,
- * not the identity. Resetting from a fresh-cookie session against an
- * old row would never match by bl_sub.
+ * Lookup precedence is bl_sub-first → email fallback. Identity-first: bl_sub
+ * holds BrainLock's stable pairwise-per-app subject, which is now the account
+ * key (stable across cookie resets/devices, unique per vault). Email is just a
+ * stored attribute. The email fallback only covers a caller that has the email
+ * but not the session subject.
  *
  * Used by the dev_action surface in index.php. Idempotent — safe to
  * call when nothing matches (no-op). Errors are logged, never thrown,
@@ -229,38 +228,37 @@ function tc_delete_user(string $blSub, string $emailAddr = ''): void {
     if ($blSub === '' && $emailAddr === '') return;
 
     // Resolve to the canonical row (and its stored bl_sub) BEFORE we
-    // delete anything. Prefer email — see header comment.
+    // delete anything. Prefer bl_sub (the subject) — see header comment.
     $rowSub = '';
     try {
-        if ($emailAddr !== '') {
-            $stmt = \tc_db()->prepare('SELECT bl_sub FROM tc_users WHERE email = ? LIMIT 1');
-            $stmt->execute([$emailAddr]);
-            $rowSub = (string)($stmt->fetchColumn() ?: '');
-        }
-        if ($rowSub === '' && $blSub !== '') {
-            // No email or no match — fall back to whatever sub the session had.
+        if ($blSub !== '') {
             $stmt = \tc_db()->prepare('SELECT bl_sub FROM tc_users WHERE bl_sub = ? LIMIT 1');
             $stmt->execute([$blSub]);
+            $rowSub = (string)($stmt->fetchColumn() ?: '');
+        }
+        if ($rowSub === '' && $emailAddr !== '') {
+            // No subject or no match — fall back to email.
+            $stmt = \tc_db()->prepare('SELECT bl_sub FROM tc_users WHERE email = ? LIMIT 1');
+            $stmt->execute([$emailAddr]);
             $rowSub = (string)($stmt->fetchColumn() ?: '');
         }
     } catch (\Throwable $e) {
         \error_log('[tangocash] tc_delete_user lookup failed: ' . $e->getMessage());
     }
 
-    // The bucket key is sha1(bl_sub_at_time_of_upload). The session sub
-    // may have rotated since upload, so always nuke based on the bl_sub
-    // we actually stored in the DB row. If nothing resolved, skip the
-    // bucket call — anything we'd delete would be guesswork.
+    // The bucket key is sha1(bl_sub_at_time_of_upload). Always nuke based on
+    // the bl_sub we actually stored in the DB row. If nothing resolved, skip
+    // the bucket call — anything we'd delete would be guesswork.
     if ($rowSub !== '') {
         try { tc_delete_avatars($rowSub); }
         catch (\Throwable $e) { \error_log('[tangocash] tc_delete_avatars failed: ' . $e->getMessage()); }
     }
 
     try {
-        if ($emailAddr !== '') {
-            \tc_db()->prepare('DELETE FROM tc_users WHERE email = ?')->execute([$emailAddr]);
-        } elseif ($blSub !== '') {
+        if ($blSub !== '') {
             \tc_db()->prepare('DELETE FROM tc_users WHERE bl_sub = ?')->execute([$blSub]);
+        } elseif ($emailAddr !== '') {
+            \tc_db()->prepare('DELETE FROM tc_users WHERE email = ?')->execute([$emailAddr]);
         }
     } catch (\Throwable $e) {
         \error_log('[tangocash] tc_delete_user failed: ' . $e->getMessage());

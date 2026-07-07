@@ -160,15 +160,9 @@ if ($status === 'failed' && $reason === 'challenge_failed') {
     );
 }
 
-// Account mismatch — the BrainLock vault now signed in differs from the
-// one we previously bound to this TangoCash account. Specific copy so
-// the user understands why retry might not behave as expected.
-if ($status === 'failed' && $reason === 'account_switch') {
-    tc_callback_retry_page(
-        "That's a different BrainLock account",
-        "This TangoCash account is linked to a different BrainLock vault than the one you just signed into. Sign out of BrainLock and try again with the right account."
-    );
-}
+// (The account_switch / "wrong account" branch was removed with the move to
+// identity-first: BrainLock no longer returns that reason — a different vault
+// simply resolves to its own TangoCash account via its own pairwise subject.)
 
 // Generic failure / unknown reason — prefer the server-supplied
 // error_description over our own guess. Never echo `reason` raw to the
@@ -277,13 +271,16 @@ $emailAddr    = (string)($identity['email']      ?? '');
 $firstName    = (string)($identity['first_name'] ?? '');
 $lastName     = (string)($identity['last_name']  ?? '');
 
-// Was this email already on file BEFORE we touch anything? Determines
-// whether to fire the one-shot avatar cache + capture the name.
+// Was this SUBJECT already on file BEFORE we touch anything? Identity-first:
+// bl_sub holds BrainLock's stable pairwise-per-app subject (identity['sub']),
+// which is the account key. It's stable across cookie resets/devices and
+// unique per vault, so keying on it means a returning vault lands on its own
+// row and two different vaults get two rows (no email collision, no wall).
 $alreadyKnown      = false;
 $cachedThumbOnFile = '';
 try {
-    $stmt = \tc_db()->prepare('SELECT picture_thumb_url FROM tc_users WHERE email = ? LIMIT 1');
-    $stmt->execute([$emailAddr]);
+    $stmt = \tc_db()->prepare('SELECT picture_thumb_url FROM tc_users WHERE bl_sub = ? LIMIT 1');
+    $stmt->execute([$blSub]);
     $existing = $stmt->fetch();
     if ($existing !== false) {
         $alreadyKnown      = true;
@@ -312,38 +309,49 @@ try {
     $db->beginTransaction();
 
     if ($alreadyKnown) {
-        // Returning user: bump telemetry only. bl_sub stays whatever it
-        // was on first signin — touching it would cascade-fail against
-        // tc_wallets.fk_wallets_user (ON DELETE CASCADE only, no
-        // ON UPDATE CASCADE). bl_user_id can spin freely since it's
-        // standalone in tc_users; we don't update it here either since
-        // the only consumer (BrainLock unbind) already reads it from
-        // the cookie.
-        //
-        // Backfill the avatar columns when this returning user didn't
-        // have one cached. Only writes the picture columns when we
-        // actually have new values, so users who already have an
-        // avatar on file aren't disturbed.
+        // Returning user (keyed on bl_sub = subject). Bump telemetry and
+        // refresh profile data — email/name are now just attributes we may
+        // update if the vault's changed upstream (they are NOT the key, so
+        // this is safe). Avatar columns only written when we have new values,
+        // so users who already have one aren't disturbed.
         if ($avatarThumb !== null || $avatarFull !== null) {
             $db->prepare(
                 'UPDATE tc_users
                     SET last_signin_at  = NOW(),
                         signin_count    = signin_count + 1,
+                        email           = :email,
+                        first_name      = :first,
+                        last_name       = :last,
+                        name            = :full_name,
                         picture_full_url  = COALESCE(:full,  picture_full_url),
                         picture_thumb_url = COALESCE(:thumb, picture_thumb_url)
-                  WHERE email = :email'
+                  WHERE bl_sub = :sub'
             )->execute([
-                ':full'  => $avatarFull,
-                ':thumb' => $avatarThumb,
-                ':email' => $emailAddr,
+                ':full'      => $avatarFull,
+                ':thumb'     => $avatarThumb,
+                ':email'     => $emailAddr,
+                ':first'     => $firstName,
+                ':last'      => $lastName,
+                ':full_name' => trim($firstName . ' ' . $lastName),
+                ':sub'       => $blSub,
             ]);
         } else {
             $db->prepare(
                 'UPDATE tc_users
                     SET last_signin_at = NOW(),
-                        signin_count = signin_count + 1
-                  WHERE email = :email'
-            )->execute([':email' => $emailAddr]);
+                        signin_count = signin_count + 1,
+                        email        = :email,
+                        first_name   = :first,
+                        last_name    = :last,
+                        name         = :full_name
+                  WHERE bl_sub = :sub'
+            )->execute([
+                ':email'     => $emailAddr,
+                ':first'     => $firstName,
+                ':last'      => $lastName,
+                ':full_name' => trim($firstName . ' ' . $lastName),
+                ':sub'       => $blSub,
+            ]);
         }
     } else {
         // First signin for this email — full INSERT with TC-cached avatar.

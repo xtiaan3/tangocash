@@ -27,13 +27,11 @@ if (\tc_current_user() === null) {
 }
 
 $current = \tc_current_user();
-// user_id passed to BrainLock MUST be the partner's stable per-user
-// identifier — the SAME value we sent to BrainLock::connect() during
-// sign-in. For TangoCash that's the tc_user_id cookie (minted in
-// auth/start.php). The BL `sub` returned in the Connect identity bundle
-// is BrainLock's own per-(vault, app) id and is NOT the right key here:
-// passing it to verifyAction means BL can't find the existing binding
-// and the ceremony degrades to a fresh Connect sign-in.
+// user_id for Verify: identity is now keyed on the pairwise `subject`, but
+// BrainLock's Verify still resolves the ceremony via its (app, env,
+// developer_user_id) binding — so we pass the SAME tc_user_id cookie we sent
+// to Connect. It's a device hint here, not the account key. (If the cookie was
+// wiped since Connect, Verify degrades to a fresh Connect — acceptable.)
 $tcUserId    = (string)($_COOKIE['tc_user_id'] ?? '');
 $signed_in   = true;
 $active_nav  = 'dashboard';

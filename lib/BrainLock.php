@@ -57,7 +57,7 @@
  * simply failed the ceremony, it returns normally with verified: false.
  *
  * Connect always returns the same fixed identity bundle:
- *   - `sub`        BL user id for this app   (always — NOT permanent, can rotate)
+ *   - `sub`        stable pairwise-per-app subject — YOUR account key (always)
  *   - `first_name` given name                (always)
  *   - `last_name`  family name               (always)
  *   - `email`      primary email             (always)
@@ -577,7 +577,7 @@ final class BrainLock
      * Returns the decoded identity claims on success:
      *
      *   [
-     *     'sub'        => '<stable user id for this app>',
+     *     'sub'        => '<stable pairwise-per-app subject — your account key>',
      *     'first_name' => 'Tim',
      *     'last_name'  => 'Apple',
      *     'email'      => 'tim.apple@example.com',

@@ -105,23 +105,28 @@ if ($ts <= 0 || $skew > 300) {
     echo \json_encode(['error' => 'stale_or_skewed_timestamp']);
     exit;
 }
-$userID = \trim((string) ($payload['user_id'] ?? ''));
-if ($userID === '') {
+// Identity-first: BrainLock sends `subject` (the pairwise per-app account key,
+// == tc_users.bl_sub). Prefer it; fall back to user_id only for a webhook
+// fired mid-cutover before this deploy. Either way we resolve to a bl_sub.
+$subject = \trim((string) ($payload['subject'] ?? ''));
+$userID  = \trim((string) ($payload['user_id'] ?? ''));
+if ($subject === '' && $userID === '') {
     \http_response_code(400);
-    echo \json_encode(['error' => 'missing_user_id']);
+    echo \json_encode(['error' => 'missing_subject']);
     exit;
 }
 
-// Look up the tc_users row by the user_id BL is referencing. That id
-// is the value we sent as `user_id` on session-create — i.e. the
-// tc_users.bl_user_id (which is set to the tc_user_id cookie value
-// at first signin; see auth/callback.php). The same field is used as
-// the dev_action=unbind argument in the menu, so the contract is
-// consistent across all three disconnect surfaces.
+// bl_sub IS the subject, so this is a direct primary-key hit. The user_id
+// fallback keys on the legacy bl_user_id column (cutover only).
 $blSub = null;
 try {
-    $stmt = \tc_db()->prepare('SELECT bl_sub FROM tc_users WHERE bl_user_id = ? LIMIT 1');
-    $stmt->execute([$userID]);
+    if ($subject !== '') {
+        $stmt = \tc_db()->prepare('SELECT bl_sub FROM tc_users WHERE bl_sub = ? LIMIT 1');
+        $stmt->execute([$subject]);
+    } else {
+        $stmt = \tc_db()->prepare('SELECT bl_sub FROM tc_users WHERE bl_user_id = ? LIMIT 1');
+        $stmt->execute([$userID]);
+    }
     $row = $stmt->fetch();
     if ($row && !empty($row['bl_sub'])) {
         $blSub = (string) $row['bl_sub'];
