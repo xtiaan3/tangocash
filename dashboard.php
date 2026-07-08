@@ -64,6 +64,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $amountDisplay = '$' . \number_format($amountCents / 100, 2);
             \BrainLock::verifyAction([
                 'user_id'        => $tcUserId,
+                // The action must be approved by the SAME account that's signed
+                // in. Pass their subject so BrainLock refuses the ceremony if a
+                // different vault tries to complete it (server-side guarantee;
+                // the callback also re-checks the receipt subject).
+                'expected_subject' => (string)($current['sub'] ?? ''),
                 'action'         => 'transfer_funds',
                 'security_level' => $level,
                 'require_geo'    => $requireGeo,

@@ -164,6 +164,16 @@ if ($status === 'failed' && $reason === 'challenge_failed') {
 // identity-first: BrainLock no longer returns that reason — a different vault
 // simply resolves to its own TangoCash account via its own pairwise subject.)
 
+// Verify identity mismatch — a DIFFERENT BrainLock account tried to approve a
+// protected action than the one signed in. BrainLock refused to mint the
+// token (server-side guarantee). Non-blaming, actionable copy.
+if ($status === 'failed' && $reason === 'subject_mismatch') {
+    tc_callback_retry_page(
+        "That approval didn't match your account",
+        "A protected action has to be approved with the same BrainLock account you're signed in with. Sign in as that account and try again."
+    );
+}
+
 // Generic failure / unknown reason — prefer the server-supplied
 // error_description over our own guess. Never echo `reason` raw to the
 // user; it's developer-facing.

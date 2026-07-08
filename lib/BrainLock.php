@@ -696,6 +696,15 @@ final class BrainLock
         if ($context !== null && !\is_array($context)) {
             throw new \InvalidArgumentException('BrainLock::verifyAction context must be an associative array.');
         }
+        // expected_subject — the subject of the account that must approve this
+        // action (i.e. the signed-in user's `sub` on your side). STRONGLY
+        // recommended: BrainLock refuses to mint the Verify token unless the
+        // authenticating vault matches it, so a DIFFERENT account can't approve
+        // an action on this user's behalf. Belt to the callback-side check.
+        $expectedSubject = $opts['expected_subject'] ?? null;
+        if ($expectedSubject !== null && !\is_string($expectedSubject)) {
+            throw new \InvalidArgumentException('BrainLock::verifyAction expected_subject must be a string.');
+        }
 
         $payload = [
             'user_id'        => $opts['user_id'],
@@ -707,6 +716,9 @@ final class BrainLock
         ];
         if ($context !== null) {
             $payload['context'] = $context;
+        }
+        if ($expectedSubject !== null && $expectedSubject !== '') {
+            $payload['expected_subject'] = $expectedSubject;
         }
 
         $resp = self::http(
