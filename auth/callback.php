@@ -36,6 +36,13 @@ $verifID  = isset($_GET['verification_id'])   ? (string)$_GET['verification_id']
 $retryHref  = ($intent === 'verify') ? '/dashboard'       : '/auth/start';
 $retryLabel = ($intent === 'verify') ? 'Back to dashboard' : 'Try again';
 
+// Where a cancel / close / non-completion should land. A Verify happens while
+// the user is already signed in, so send them back to the page they came from
+// (the dashboard) rather than the signed-out home page. Fixed internal path —
+// no open-redirect surface. Connect cancels land on home (they aren't signed
+// in yet).
+$cancelHref = ($intent === 'verify') ? '/dashboard' : '/';
+
 /**
  * Render the inline retry page. Used for failures where the user is
  * mid-flow and the right next action is "try again" (challenge failed,
@@ -145,9 +152,10 @@ function tc_callback_error_copy(\Throwable $e, string $ceremony): array {
 
 // ----- Non-success branches -----------------------------------------------
 
-// User intentionally cancelled — silent return home. Not an error.
+// User intentionally cancelled — silent return to where they came from
+// (dashboard for Verify, home for Connect). Not an error.
 if ($status === 'denied' && $reason === 'user_denied') {
-    \header('Location: /');
+    \header('Location: ' . $cancelHref);
     exit;
 }
 
@@ -159,7 +167,7 @@ if ($status === 'denied' && $reason === 'user_denied') {
 // older partner builds may still see "denied" here, so we accept
 // either to stay forward/backward compatible.
 if ($reason === 'session_expired' || $reason === 'session_already_resolved') {
-    \header('Location: /');
+    \header('Location: ' . $cancelHref);
     exit;
 }
 
