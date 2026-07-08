@@ -262,6 +262,16 @@ if ($intent === 'verify') {
                 $retryHref, $retryLabel
             );
         }
+        // Partner receipt — TangoCash emails the money detail (amount +
+        // recipient) to the user. BrainLock separately sent the identity
+        // security alert. Only for transfers; best-effort.
+        if (($receipt['action'] ?? '') === 'transfer_funds') {
+            tc_send_receipt_email(
+                (string)($_SESSION['bl_user']['email'] ?? ''),
+                (string)($_SESSION['bl_user']['first_name'] ?? ''),
+                $receipt
+            );
+        }
         $_SESSION['last_receipt'] = $receipt;
         \session_write_close();
         \header('Location: /receipt');

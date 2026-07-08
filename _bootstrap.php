@@ -264,3 +264,61 @@ function tc_delete_user(string $blSub, string $emailAddr = ''): void {
         \error_log('[tangocash] tc_delete_user failed: ' . $e->getMessage());
     }
 }
+
+/**
+ * tc_send_receipt_email — the PARTNER's half of the approval notification.
+ * BrainLock sends the identity/security alert ("you approved an action");
+ * TangoCash sends the money receipt (amount + recipient) — the financial
+ * detail is the wallet's data, not BrainLock's. Best-effort via the local
+ * MTA; never fatal. Built from the Verify receipt's context.
+ */
+function tc_send_receipt_email(string $toEmail, string $toName, array $receipt): void {
+    $toEmail = \trim($toEmail);
+    if ($toEmail === '' || !\filter_var($toEmail, \FILTER_VALIDATE_EMAIL)) return;
+
+    $ctx         = \is_array($receipt['context'] ?? null) ? $receipt['context'] : [];
+    $amountCents = (int) ($ctx['amount_cents'] ?? 0);
+    $amount      = '$' . \number_format($amountCents / 100, 2);
+    $recipient   = 'a TangoCash user';
+    if (!empty($ctx['display']) && \is_array($ctx['display'])) {
+        foreach ($ctx['display'] as $row) {
+            if (($row['label'] ?? '') === 'Recipient') { $recipient = (string) ($row['value'] ?? $recipient); break; }
+        }
+    }
+    $first  = $toName !== '' ? $toName : 'there';
+    $when   = \gmdate('M j, Y \a\t g:i A') . ' UTC';
+    $verifID = (string) ($receipt['verification_id'] ?? '');
+
+    $eAmount = \htmlspecialchars($amount);
+    $eRecip  = \htmlspecialchars($recipient);
+    $eFirst  = \htmlspecialchars($first);
+    $eWhen   = \htmlspecialchars($when);
+    $eVerif  = \htmlspecialchars($verifID);
+
+    $html = '<!doctype html><html><body style="margin:0;background:#F4F4F2;font-family:Inter,Segoe UI,Helvetica,Arial,sans-serif;color:#0B0B0E;">'
+        . '<div style="max-width:480px;margin:0 auto;padding:32px 20px;">'
+        . '<div style="background:#fff;border:1px solid rgba(11,11,14,0.10);border-radius:20px;padding:32px 28px;">'
+        . '<div style="font:700 12px/1 Inter,sans-serif;letter-spacing:0.14em;text-transform:uppercase;color:#ff2a99;margin-bottom:18px;">TangoCash Receipt</div>'
+        . '<h1 style="font-size:22px;margin:0 0 6px;">You sent ' . $eAmount . '</h1>'
+        . '<p style="color:#3A3A40;margin:0 0 20px;">Hi ' . $eFirst . ', your transfer is complete.</p>'
+        . '<table style="width:100%;border-collapse:collapse;font-size:15px;">'
+        . '<tr><td style="padding:8px 0;color:#8A8A8E;">Amount</td><td style="padding:8px 0;text-align:right;font-weight:600;">' . $eAmount . '</td></tr>'
+        . '<tr><td style="padding:8px 0;color:#8A8A8E;">To</td><td style="padding:8px 0;text-align:right;font-weight:600;">' . $eRecip . '</td></tr>'
+        . '<tr><td style="padding:8px 0;color:#8A8A8E;">When</td><td style="padding:8px 0;text-align:right;">' . $eWhen . '</td></tr>'
+        . '</table>'
+        . '<p style="color:#8A8A8E;font-size:12px;margin:20px 0 0;">Approved with BrainLock. Receipt ' . $eVerif . '</p>'
+        . '</div>'
+        . '<p style="color:#8A8A8E;font-size:12px;text-align:center;margin:16px 0 0;">TangoCash — a BrainLock demo</p>'
+        . '</div></body></html>';
+
+    $headers = \implode("\r\n", [
+        'MIME-Version: 1.0',
+        'Content-Type: text/html; charset=UTF-8',
+        'From: TangoCash <noreply@tangocash.etonica.com>',
+    ]);
+    try {
+        \mail($toEmail, 'You sent ' . $amount . ' on TangoCash', $html, $headers);
+    } catch (\Throwable $e) {
+        \error_log('[tangocash] receipt email failed: ' . $e->getMessage());
+    }
+}
