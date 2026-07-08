@@ -484,14 +484,11 @@ final class BrainLock
     /**
      * Start a sign-in flow.
      *
-     * Required:
-     *   user_id — YOUR app's stable identifier for the user. BrainLock uses
-     *             it to maintain a (your_app, user_id) → BrainLock vault
-     *             binding so the same person always lands on the same row.
-     *             For first-time users, you can pass session_id() and migrate
-     *             on the callback once you mint your own user_id.
-     *
      * Optional:
+     *   user_id        — YOUR own identifier for the user, echoed back for
+     *                    your reference. It is NOT the account key — reconcile
+     *                    on the returned `sub` (the stable pairwise subject).
+     *                    Omit it entirely if you have nothing to correlate.
      *   security_level — 'secure' (default) | 'elevated' | 'maximum'
      *   state          — opaque CSRF/round-trip string. Auto-generated when omitted.
      *
@@ -518,8 +515,15 @@ final class BrainLock
     {
         self::ensureConfigured();
 
-        if (empty($opts['user_id']) || !\is_string($opts['user_id'])) {
-            throw new \InvalidArgumentException('BrainLock::connect requires user_id.');
+        // user_id is OPTIONAL — echoed back for your reference, not the
+        // account key (reconcile on the returned `sub`/subject). Send it only
+        // when you have a stable value to correlate.
+        $userId = '';
+        if (isset($opts['user_id'])) {
+            if (!\is_string($opts['user_id'])) {
+                throw new \InvalidArgumentException('BrainLock::connect: user_id must be a string.');
+            }
+            $userId = $opts['user_id'];
         }
         $state = $opts['state'] ?? \bin2hex(\random_bytes(16));
         $level = $opts['security_level'] ?? 'secure';
@@ -528,15 +532,18 @@ final class BrainLock
         }
 
         // Create the auth session on the BrainLock side.
+        $payload = [
+            'security_level' => $level,
+            'state'          => $state,
+            'require_geo'    => !empty($opts['require_geo']),
+        ];
+        if ($userId !== '') {
+            $payload['user_id'] = $userId;
+        }
         $resp = self::http(
             'POST',
             self::$config['api_base'] . '/v1/auth/session',
-            [
-                'user_id'        => $opts['user_id'],
-                'security_level' => $level,
-                'state'          => $state,
-                'require_geo'    => !empty($opts['require_geo']),
-            ],
+            $payload,
             ['Authorization: Bearer ' . self::$config['api_key']]
         );
         if (empty($resp['redirect_url']) || empty($resp['session_id'])) {
@@ -753,7 +760,7 @@ final class BrainLock
      * intent mismatch, etc.). Returns the action receipt on success:
      *
      *   [
-     *     'sub'             => '<your user_id>',
+     *     'sub'             => '<stable pairwise-per-app subject — your account key, never the user_id>',
      *     'session_id'      => '<bl_sess_…>',
      *     'verification_id' => '<verif_…>',           // audit-log id
      *     'verified'        => true,
