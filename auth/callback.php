@@ -205,6 +205,28 @@ if ($intent === 'verify') {
     // for every action, not just transfer_funds; receipt.php renders
     // generically from whatever's in $receipt['context'].
     if (!empty($receipt['verified'])) {
+        // SECURITY — bind the Verify to the signed-in identity.
+        //
+        // A Verify receipt only authorizes an action for the SAME account
+        // that's signed in. The subject that just passed the challenge MUST
+        // equal the session's subject; otherwise a DIFFERENT vault could
+        // approve a protected action on this user's account (e.g. the user
+        // signs out of BrainLock mid-session and someone else completes the
+        // step as their own vault). Never run the action on a mismatch.
+        //
+        // (Before identity-first this was enforced server-side by BrainLock's
+        // account_switch binding; with that retired, the partner MUST check
+        // the receipt subject against the session. BrainLock will also grow a
+        // server-side expected-subject guard as defense-in-depth.)
+        $sessionSub = (string)($_SESSION['bl_user']['sub'] ?? '');
+        $receiptSub = (string)($receipt['sub'] ?? '');
+        if ($sessionSub === '' || $receiptSub === '' || !\hash_equals($sessionSub, $receiptSub)) {
+            \error_log('[tangocash] SECURITY: verify subject mismatch — session=' . $sessionSub . ' receipt=' . $receiptSub);
+            tc_callback_retry_page(
+                "That approval didn't match your account",
+                "A protected action has to be approved with the same BrainLock account you're signed in with. Sign in as that account and try the transfer again."
+            );
+        }
         $_SESSION['last_receipt'] = $receipt;
         \session_write_close();
         \header('Location: /receipt');
