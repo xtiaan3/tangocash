@@ -28,28 +28,41 @@ $errDesc  = isset($_GET['error_description']) ? (string)$_GET['error_description
 $intent   = isset($_GET['intent'])            ? (string)$_GET['intent']            : 'connect';
 $verifID  = isset($_GET['verification_id'])   ? (string)$_GET['verification_id']   : '';
 
+// Where a "try again" on the error card should go. A Verify failure happens
+// while the user is ALREADY signed in, so retry returns to the dashboard —
+// NOT /auth/start (which restarts a Connect sign-in and would silently switch
+// their account). A Connect failure means they aren't signed in, so retrying
+// the sign-in is correct.
+$retryHref  = ($intent === 'verify') ? '/dashboard'       : '/auth/start';
+$retryLabel = ($intent === 'verify') ? 'Back to dashboard' : 'Try again';
+
 /**
  * Render the inline retry page. Used for failures where the user is
  * mid-flow and the right next action is "try again" (challenge failed,
  * account switch, anything we don't have specific copy for).
  */
-function tc_callback_retry_page(string $headline, string $body): void {
+/**
+ * Renders a small, on-brand error card (cream page, white card, gradient ✱
+ * eyebrow + pill CTA) — NOT the oversized Anton display hero. Callers pass the
+ * CTA destination so a Verify failure returns to the dashboard rather than
+ * restarting a Connect sign-in (which would silently switch accounts).
+ */
+function tc_callback_retry_page(string $headline, string $body, string $ctaHref = '/auth/start', string $ctaLabel = 'Try again'): void {
     \http_response_code(400);
     \header('Content-Type: text/html; charset=utf-8');
     $cssV = @\filemtime(__DIR__ . '/../css/tangocash.css') ?: \time();
     echo '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">'
        . '<meta name="viewport" content="width=device-width, initial-scale=1.0">'
-       . '<title>Sign-in didn\'t complete — TangoCash</title>'
+       . '<title>' . \htmlspecialchars($headline) . ' — TangoCash</title>'
        . '<link rel="stylesheet" href="/css/tangocash.css?v=' . $cssV . '">'
        . '</head><body class="tc_v6_page is_signed_out">'
-       . '<main class="tc_v6_main"><section class="tc_v6_hero">'
-       . '<div class="tc_v6_hero_eyebrow"><span class="tc_v6_hero_eyebrow_star">✱</span><span>Sign-in</span></div>'
-       . '<h1 class="tc_v6_display tc_v6_display_solid">' . \htmlspecialchars($headline) . '</h1>'
-       . '<p class="tc_v6_hero_sub">' . \htmlspecialchars($body) . '</p>'
-       . '<div class="tc_v6_hero_cta_wrap">'
-       . '<a class="tc_v6_cta_white" href="/auth/start"><span>Try again</span><span class="tc_v6_cta_white_star">✱</span></a>'
-       . '</div>'
-       . '</section></main></body></html>';
+       . '<main style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;box-sizing:border-box;">'
+       . '<div style="background:var(--tc_v6_paper);border:1px solid var(--tc_v6_rule);border-radius:20px;padding:38px 34px;max-width:440px;width:100%;text-align:center;box-shadow:0 12px 44px rgba(11,11,14,0.07);box-sizing:border-box;">'
+       . '<div style="display:inline-block;font:700 11px/1 var(--tc_v6_font_body);letter-spacing:0.16em;text-transform:uppercase;background:var(--tc_v6_neon_grad);-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:18px;">&#10033; TangoCash</div>'
+       . '<h1 style="font:700 22px/1.3 var(--tc_v6_font_body);color:var(--tc_v6_ink);margin:0 0 12px;">' . \htmlspecialchars($headline) . '</h1>'
+       . '<p style="font:400 15px/1.55 var(--tc_v6_font_body);color:var(--tc_v6_ink_dim);margin:0 0 26px;">' . \htmlspecialchars($body) . '</p>'
+       . '<a class="tc_v6_cta" href="' . \htmlspecialchars($ctaHref) . '"><span>' . \htmlspecialchars($ctaLabel) . '</span><span class="tc_v6_cta_star">&#10033;</span></a>'
+       . '</div></main></body></html>';
     exit;
 }
 
@@ -156,7 +169,8 @@ if ($reason === 'session_expired' || $reason === 'session_already_resolved') {
 if ($status === 'failed' && $reason === 'challenge_failed') {
     tc_callback_retry_page(
         "We couldn't verify it was you",
-        "BrainLock didn't recognise your responses to the memory challenges. Give it another go — these things take practice."
+        "BrainLock didn't recognise your responses to the memory challenges. Give it another go — these things take practice.",
+        $retryHref, $retryLabel
     );
 }
 
@@ -170,7 +184,8 @@ if ($status === 'failed' && $reason === 'challenge_failed') {
 if ($status === 'failed' && $reason === 'subject_mismatch') {
     tc_callback_retry_page(
         "That approval didn't match your account",
-        "A protected action has to be approved with the same BrainLock account you're signed in with. Sign in as that account and try again."
+        "A protected action has to be approved with the same BrainLock account you're signed in with. Sign in as that account and try again.",
+        $retryHref, $retryLabel
     );
 }
 
@@ -181,14 +196,15 @@ if ($status === 'failed' || $status !== 'success') {
     $body = $errDesc !== ''
         ? $errDesc . ' Please try again.'
         : "Something went wrong on the BrainLock side. Please try again.";
-    tc_callback_retry_page("Sign-in didn't complete", $body);
+    tc_callback_retry_page("Sign-in didn't complete", $body, $retryHref, $retryLabel);
 }
 
 // No token even though status=success — shouldn't happen, but handle.
 if ($token === '') {
     tc_callback_retry_page(
         'Sign-in token was missing',
-        "We expected a sign-in token from BrainLock but didn't receive one. That's on us — please try again."
+        "We expected a sign-in token from BrainLock but didn't receive one. That's on us — please try again.",
+        $retryHref, $retryLabel
     );
 }
 
@@ -208,7 +224,7 @@ if ($intent === 'verify') {
     } catch (\Throwable $e) {
         \error_log('[tangocash] BrainLock::verifyActionToken failed: ' . $e->getMessage());
         [$headline, $body] = tc_callback_error_copy($e, 'verify');
-        tc_callback_retry_page($headline, $body);
+        tc_callback_retry_page($headline, $body, $retryHref, $retryLabel);
     }
     // Verify ceremony complete — stash the full receipt in the PHP
     // session and route to the dedicated /receipt landing page. Works
@@ -234,7 +250,8 @@ if ($intent === 'verify') {
             \error_log('[tangocash] SECURITY: verify subject mismatch — session=' . $sessionSub . ' receipt=' . $receiptSub);
             tc_callback_retry_page(
                 "That approval didn't match your account",
-                "A protected action has to be approved with the same BrainLock account you're signed in with. Sign in as that account and try the transfer again."
+                "A protected action has to be approved with the same BrainLock account you're signed in with. Sign in as that account and try the transfer again.",
+                $retryHref, $retryLabel
             );
         }
         $_SESSION['last_receipt'] = $receipt;
@@ -265,13 +282,14 @@ try {
 } catch (\Throwable $e) {
     \error_log('[tangocash] BrainLock::verifyConnectToken failed: ' . $e->getMessage());
     [$headline, $body] = tc_callback_error_copy($e, 'connect');
-    tc_callback_retry_page($headline, $body);
+    tc_callback_retry_page($headline, $body, $retryHref, $retryLabel);
 }
 
 if (empty($identity['sub'])) {
     tc_callback_retry_page(
         'Token verified, identity was empty',
-        "BrainLock returned a verified token with no identity attached. That shouldn't happen — please try again."
+        "BrainLock returned a verified token with no identity attached. That shouldn't happen — please try again.",
+        $retryHref, $retryLabel
     );
 }
 
